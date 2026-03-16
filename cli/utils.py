@@ -155,6 +155,16 @@ def select_shallow_thinking_agent(provider) -> str:
             ("Grok 4 Fast (Non-Reasoning) - Speed optimized", "grok-4-fast-non-reasoning"),
             ("Grok 4.1 Fast (Reasoning) - High-performance, 2M ctx", "grok-4-1-fast-reasoning"),
         ],
+        "deepseek": [
+            ("DeepSeek-Chat (V3) - Fast, cost-effective", "deepseek-chat"),
+            ("DeepSeek-Reasoner (R1) - Strong reasoning", "deepseek-reasoner"),
+        ],
+        "minimax": [
+            ("MiniMax-M2.5 Highspeed - Fast, balanced", "MiniMax-M2.5-highspeed"),
+            ("MiniMax-M2.1 Highspeed - Fast coding", "MiniMax-M2.1-highspeed"),
+            ("MiniMax-M2 - Stable general purpose", "MiniMax-M2"),
+            ("abab6.5s-chat - Legacy model", "abab6.5s-chat"),
+        ],
         "openrouter": [
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
@@ -163,6 +173,9 @@ def select_shallow_thinking_agent(provider) -> str:
             ("Qwen3:latest (8B, local)", "qwen3:latest"),
             ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
             ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
+        ],
+        "custom": [
+            ("Custom Model (enter name manually)", "custom-model"),
         ],
     }
 
@@ -187,6 +200,17 @@ def select_shallow_thinking_agent(provider) -> str:
             "\n[red]No shallow thinking llm engine selected. Exiting...[/red]"
         )
         exit(1)
+
+    if choice == "custom-model":
+        choice = questionary.text(
+            "Enter your custom model name:",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a model name.",
+            style=questionary.Style([("text", "fg:green"), ("highlighted", "noinherit")]),
+        ).ask()
+        if not choice:
+            console.print("\n[red]No model name provided. Exiting...[/red]")
+            exit(1)
+        choice = choice.strip()
 
     return choice
 
@@ -222,6 +246,16 @@ def select_deep_thinking_agent(provider) -> str:
             ("Grok 4 Fast (Reasoning) - High-performance", "grok-4-fast-reasoning"),
             ("Grok 4.1 Fast (Non-Reasoning) - Speed optimized, 2M ctx", "grok-4-1-fast-non-reasoning"),
         ],
+        "deepseek": [
+            ("DeepSeek-Reasoner (R1) - Strong reasoning", "deepseek-reasoner"),
+            ("DeepSeek-Chat (V3) - Fast, cost-effective", "deepseek-chat"),
+        ],
+        "minimax": [
+            ("MiniMax-M2.5 - Top performance, complex tasks", "MiniMax-M2.5"),
+            ("MiniMax-M2.1 - Strong coding ability", "MiniMax-M2.1"),
+            ("MiniMax-M2.5 Highspeed - Fast, balanced", "MiniMax-M2.5-highspeed"),
+            ("MiniMax-Text-01 - Text generation", "MiniMax-Text-01"),
+        ],
         "openrouter": [
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
@@ -230,6 +264,9 @@ def select_deep_thinking_agent(provider) -> str:
             ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
             ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
             ("Qwen3:latest (8B, local)", "qwen3:latest"),
+        ],
+        "custom": [
+            ("Custom Model (enter name manually)", "custom-model"),
         ],
     }
 
@@ -253,6 +290,17 @@ def select_deep_thinking_agent(provider) -> str:
         console.print("\n[red]No deep thinking llm engine selected. Exiting...[/red]")
         exit(1)
 
+    if choice == "custom-model":
+        choice = questionary.text(
+            "Enter your custom model name:",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a model name.",
+            style=questionary.Style([("text", "fg:green"), ("highlighted", "noinherit")]),
+        ).ask()
+        if not choice:
+            console.print("\n[red]No model name provided. Exiting...[/red]")
+            exit(1)
+        choice = choice.strip()
+
     return choice
 
 def select_llm_provider() -> tuple[str, str]:
@@ -263,8 +311,11 @@ def select_llm_provider() -> tuple[str, str]:
         ("Google", "https://generativelanguage.googleapis.com/v1"),
         ("Anthropic", "https://api.anthropic.com/"),
         ("xAI", "https://api.x.ai/v1"),
+        ("DeepSeek", "https://api.deepseek.com"),
+        ("MiniMax", "https://api.minimaxi.com/v1"),
         ("Openrouter", "https://openrouter.ai/api/v1"),
         ("Ollama", "http://localhost:11434/v1"),
+        ("Custom", ""),
     ]
     
     choice = questionary.select(
@@ -288,6 +339,18 @@ def select_llm_provider() -> tuple[str, str]:
         exit(1)
     
     display_name, url = choice
+
+    if display_name == "Custom":
+        url = questionary.text(
+            "Enter the base URL for your custom LLM service (OpenAI-compatible):",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a valid URL.",
+            style=questionary.Style([("text", "fg:green"), ("highlighted", "noinherit")]),
+        ).ask()
+        if not url:
+            console.print("\n[red]No URL provided. Exiting...[/red]")
+            exit(1)
+        url = url.strip()
+
     print(f"You selected: {display_name}\tURL: {url}")
 
     return display_name, url

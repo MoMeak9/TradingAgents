@@ -27,7 +27,7 @@ class UnifiedChatOpenAI(ChatOpenAI):
 
 
 class OpenAIClient(BaseLLMClient):
-    """Client for OpenAI, Ollama, OpenRouter, and xAI providers."""
+    """Client for OpenAI-compatible providers (OpenAI, xAI, DeepSeek, MiniMax, Ollama, OpenRouter, Custom)."""
 
     def __init__(
         self,
@@ -53,9 +53,25 @@ class OpenAIClient(BaseLLMClient):
             api_key = os.environ.get("OPENROUTER_API_KEY")
             if api_key:
                 llm_kwargs["api_key"] = api_key
+        elif self.provider == "deepseek":
+            llm_kwargs["base_url"] = "https://api.deepseek.com"
+            api_key = os.environ.get("DEEPSEEK_API_KEY")
+            if api_key:
+                llm_kwargs["api_key"] = api_key
+        elif self.provider == "minimax":
+            llm_kwargs["base_url"] = "https://api.minimaxi.com/v1"
+            api_key = os.environ.get("MINIMAX_API_KEY")
+            if api_key:
+                llm_kwargs["api_key"] = api_key
         elif self.provider == "ollama":
             llm_kwargs["base_url"] = "http://localhost:11434/v1"
             llm_kwargs["api_key"] = "ollama"  # Ollama doesn't require auth
+        elif self.provider == "custom":
+            if self.base_url:
+                llm_kwargs["base_url"] = self.base_url
+            api_key = os.environ.get("CUSTOM_LLM_API_KEY")
+            if api_key:
+                llm_kwargs["api_key"] = api_key
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
