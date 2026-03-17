@@ -31,4 +31,19 @@ DEFAULT_CONFIG = {
     "tool_vendors": {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default
     },
+    # A-share (CN market) data vendor configuration
+    # Primary: tushare (more accurate fundamentals), Fallback: akshare
+    "cn_data_vendors": {
+        "core_stock_apis": "tushare",        # Options: tushare, akshare
+        "technical_indicators": "tushare",   # Options: tushare, akshare
+        "fundamental_data": "tushare",       # Options: tushare, akshare
+        "news_data": "akshare",              # Options: akshare (tushare has no news API)
+    },
+    "cn_tool_vendors": {
+        # Example: "get_stock_data": "akshare",  # Override category default
+    },
+    # Tushare token (required for tushare as primary vendor)
+    "tushare_token": os.getenv("TUSHARE_TOKEN", ""),
+    # A-share request interval (seconds) to avoid being blocked
+    "cn_request_interval": 0.3,
 }

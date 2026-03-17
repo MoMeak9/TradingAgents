@@ -1,6 +1,7 @@
 from langchain_core.messages import AIMessage
 import time
 import json
+from tradingagents.agents.utils.cn_market_prompts import get_prompt_suffix
 
 
 def create_bull_researcher(llm, memory):
@@ -41,6 +42,10 @@ Last bear argument: {current_response}
 Reflections from similar situations and lessons learned: {past_memory_str}
 Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position. You must also address reflections and learn from lessons and mistakes you made in the past.
 """
+
+        # Append CN market suffix if analyzing A-share
+        market_ctx = state.get("market_context", {})
+        prompt += get_prompt_suffix(market_ctx.get("market", "us"), "researcher")
 
         response = llm.invoke(prompt)
 

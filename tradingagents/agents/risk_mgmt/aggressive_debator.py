@@ -1,5 +1,6 @@
 import time
 import json
+from tradingagents.agents.utils.cn_market_prompts import get_prompt_suffix
 
 
 def create_aggressive_debator(llm):
@@ -31,6 +32,10 @@ Company Fundamentals Report: {fundamentals_report}
 Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints, do not hallucinate and just present your point.
 
 Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""
+
+        # Append CN market suffix if analyzing A-share
+        market_ctx = state.get("market_context", {})
+        prompt += get_prompt_suffix(market_ctx.get("market", "us"), "risk")
 
         response = llm.invoke(prompt)
 

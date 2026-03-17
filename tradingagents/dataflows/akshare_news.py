@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-from .config import get_config
+from .config import get_config, bypass_proxy_for_cn, restore_proxy
 
 
 def _request_delay():
@@ -12,6 +12,28 @@ def _request_delay():
     config = get_config()
     interval = config.get("cn_request_interval", 0.3)
     time.sleep(interval)
+
+
+def _retry_call(func, *args, max_retries=2, base_delay=2.0, **kwargs):
+    """Retry an akshare API call with proxy bypass and exponential backoff."""
+    saved_proxy = bypass_proxy_for_cn()
+    try:
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                    _request_delay()
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                if any(kw in err_str for kw in ["rate limit", "too many requests", "proxy", "connection", "timeout", "retries exceeded"]):
+                    continue
+                raise
+        raise last_error
+    finally:
+        restore_proxy(saved_proxy)
 
 
 def get_news(
@@ -34,7 +56,7 @@ def get_news(
 
     try:
         _request_delay()
-        df = ak.stock_news_em(symbol=ticker)
+        df = _retry_call(ak.stock_news_em, symbol=ticker)
 
         if df is None or df.empty:
             return f"{ticker} 在 {start_date} 至 {end_date} 期间没有相关新闻"
@@ -113,9 +135,11 @@ def get_global_news(
     start_date = start_dt.strftime("%Y-%m-%d")
 
     # Source 1: Global stock information
+    # Note: akshare global news APIs return current/recent news without precise date fields.
+    # The look_back_days parameter is used for header context only.
     try:
         _request_delay()
-        df_global = ak.stock_info_global_em()
+        df_global = _retry_call(ak.stock_info_global_em)
         if df_global is not None and not df_global.empty:
             for _, row in df_global.iterrows():
                 title = str(row.get("标题", row.iloc[0] if len(row) > 0 else ""))
@@ -135,7 +159,7 @@ def get_global_news(
     if len(all_news) < limit:
         try:
             _request_delay()
-            df_cjzc = ak.stock_info_cjzc_em()
+            df_cjzc = _retry_call(ak.stock_info_cjzc_em)
             if df_cjzc is not None and not df_cjzc.empty:
                 for _, row in df_cjzc.iterrows():
                     title = str(row.get("标题", row.iloc[0] if len(row) > 0 else ""))

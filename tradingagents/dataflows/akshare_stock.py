@@ -8,7 +8,7 @@ from typing import Annotated
 import pandas as pd
 from stockstats import wrap
 
-from .config import get_config
+from .config import get_config, bypass_proxy_for_cn, restore_proxy
 from .stockstats_utils import _clean_dataframe
 
 # Chinese → English column name mapping
@@ -56,6 +56,28 @@ def _request_delay():
     time.sleep(interval)
 
 
+def _retry_call(func, *args, max_retries=2, base_delay=1.0, **kwargs):
+    """Retry an akshare API call with proxy bypass and exponential backoff."""
+    saved_proxy = bypass_proxy_for_cn()
+    try:
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                    _request_delay()
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                if any(kw in err_str for kw in ["proxy", "connection", "timeout", "retries exceeded", "remote end closed"]):
+                    continue
+                raise
+        raise last_error
+    finally:
+        restore_proxy(saved_proxy)
+
+
 def get_stock_data(
     symbol: Annotated[str, "A-share stock code, e.g. 600519"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -68,6 +90,7 @@ def get_stock_data(
     """
     import akshare as ak
 
+    saved_proxy = bypass_proxy_for_cn()
     try:
         # Validate dates
         datetime.strptime(start_date, "%Y-%m-%d")
@@ -108,7 +131,9 @@ def get_stock_data(
         return header + csv_string
 
     except Exception as e:
-        return f"Error fetching A-share data for {symbol}: {str(e)}"
+        return f"Error fetching A-share data for {symbol} via akshare: {e}"
+    finally:
+        restore_proxy(saved_proxy)
 
 
 def _fetch_and_cache_cn_data(symbol: str) -> pd.DataFrame:
@@ -135,24 +160,28 @@ def _fetch_and_cache_cn_data(symbol: str) -> pd.DataFrame:
     if os.path.exists(cache_file):
         data = pd.read_csv(cache_file, on_bad_lines="skip")
     else:
-        _request_delay()
+        saved_proxy = bypass_proxy_for_cn()
+        try:
+            _request_delay()
 
-        ak_start = start_date.strftime("%Y%m%d")
-        ak_end = today.strftime("%Y%m%d")
+            ak_start = start_date.strftime("%Y%m%d")
+            ak_end = today.strftime("%Y%m%d")
 
-        data = ak.stock_zh_a_hist(
-            symbol=symbol,
-            period="daily",
-            start_date=ak_start,
-            end_date=ak_end,
-            adjust="qfq",
-        )
+            data = ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=ak_start,
+                end_date=ak_end,
+                adjust="qfq",
+            )
 
-        if data is None or data.empty:
-            raise Exception(f"No historical data available for A-share {symbol}")
+            if data is None or data.empty:
+                raise Exception(f"No historical data available for A-share {symbol}")
 
-        data = _normalize_akshare_df(data)
-        data.to_csv(cache_file, index=False)
+            data = _normalize_akshare_df(data)
+            data.to_csv(cache_file, index=False)
+        finally:
+            restore_proxy(saved_proxy)
 
     return data
 
@@ -227,7 +256,7 @@ def get_indicators(
             current_dt = current_dt - relativedelta(days=1)
 
     except Exception as e:
-        return f"Error calculating {indicator} for A-share {symbol}: {str(e)}"
+        return f"Error calculating {indicator} for A-share {symbol} via akshare: {e}"
 
     result_str = (
         f"## {indicator} values from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n"
@@ -248,7 +277,7 @@ def get_fundamentals(
 
     try:
         _request_delay()
-        df = ak.stock_individual_info_em(symbol=ticker)
+        df = _retry_call(ak.stock_individual_info_em, symbol=ticker)
 
         if df is None or df.empty:
             return f"No fundamentals data found for A-share '{ticker}'"
@@ -279,7 +308,7 @@ def get_balance_sheet(
 
     try:
         _request_delay()
-        df = ak.stock_balance_sheet_by_report_em(symbol=ticker)
+        df = _retry_call(ak.stock_balance_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
             return f"No balance sheet data found for A-share '{ticker}'"
@@ -309,7 +338,7 @@ def get_cashflow(
 
     try:
         _request_delay()
-        df = ak.stock_cash_flow_sheet_by_report_em(symbol=ticker)
+        df = _retry_call(ak.stock_cash_flow_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
             return f"No cash flow data found for A-share '{ticker}'"
@@ -338,7 +367,7 @@ def get_income_statement(
 
     try:
         _request_delay()
-        df = ak.stock_profit_sheet_by_report_em(symbol=ticker)
+        df = _retry_call(ak.stock_profit_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
             return f"No income statement data found for A-share '{ticker}'"
@@ -369,6 +398,8 @@ def get_insider_transactions(
     import akshare as ak
 
     try:
+        if not ticker:
+            return "A 股代码为空，无法获取大宗交易数据。"
         _request_delay()
         exchange = "SH" if ticker[0] in ("6", "9") else "SZ"
         full_code = f"{exchange}{ticker}"

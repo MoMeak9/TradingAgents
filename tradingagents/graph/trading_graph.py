@@ -18,7 +18,8 @@ from tradingagents.agents.utils.agent_states import (
     InvestDebateState,
     RiskDebateState,
 )
-from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.config import set_config, set_market_context
+from tradingagents.dataflows.market_utils import detect_market
 
 # Import the new abstract tool methods from agent_utils
 from tradingagents.agents.utils.agent_utils import (
@@ -93,13 +94,12 @@ class TradingAgentsGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        
-        # Initialize memories
-        self.bull_memory = FinancialSituationMemory("bull_memory", self.config)
-        self.bear_memory = FinancialSituationMemory("bear_memory", self.config)
-        self.trader_memory = FinancialSituationMemory("trader_memory", self.config)
-        self.invest_judge_memory = FinancialSituationMemory("invest_judge_memory", self.config)
-        self.risk_manager_memory = FinancialSituationMemory("risk_manager_memory", self.config)
+
+        # Initialize memories with market prefix support
+        # Default to US market; will be re-initialized if CN market detected
+        self._memories_cache = {}
+        self._current_market = "us"
+        memories = self._get_memories("us")
 
         # Create tool nodes
         self.tool_nodes = self._create_tool_nodes()
@@ -113,15 +113,15 @@ class TradingAgentsGraph:
             self.quick_thinking_llm,
             self.deep_thinking_llm,
             self.tool_nodes,
-            self.bull_memory,
-            self.bear_memory,
-            self.trader_memory,
-            self.invest_judge_memory,
-            self.risk_manager_memory,
+            memories["bull"],
+            memories["bear"],
+            memories["trader"],
+            memories["invest_judge"],
+            memories["risk_manager"],
             self.conditional_logic,
         )
 
-        self.propagator = Propagator()
+        self.propagator = Propagator(max_recur_limit=self.config.get("max_recur_limit", 100))
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
@@ -131,6 +131,7 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph
+        self._selected_analysts = selected_analysts
         self.graph = self.graph_setup.setup_graph(selected_analysts)
 
     def _get_provider_kwargs(self) -> Dict[str, Any]:
@@ -186,10 +187,49 @@ class TradingAgentsGraph:
             ),
         }
 
+    def _get_memories(self, market: str) -> dict:
+        """Get or create market-specific memory instances."""
+        if market not in self._memories_cache:
+            prefix = f"{market}_"
+            self._memories_cache[market] = {
+                "bull": FinancialSituationMemory(f"{prefix}bull_memory", self.config),
+                "bear": FinancialSituationMemory(f"{prefix}bear_memory", self.config),
+                "trader": FinancialSituationMemory(f"{prefix}trader_memory", self.config),
+                "invest_judge": FinancialSituationMemory(f"{prefix}invest_judge_memory", self.config),
+                "risk_manager": FinancialSituationMemory(f"{prefix}risk_manager_memory", self.config),
+            }
+        return self._memories_cache[market]
+
+    def _rebuild_graph_for_market(self, market: str):
+        """Rebuild the graph with market-specific memories if market changed."""
+        if market == self._current_market:
+            return
+        self._current_market = market
+        memories = self._get_memories(market)
+        self.graph_setup = GraphSetup(
+            self.quick_thinking_llm,
+            self.deep_thinking_llm,
+            self.tool_nodes,
+            memories["bull"],
+            memories["bear"],
+            memories["trader"],
+            memories["invest_judge"],
+            memories["risk_manager"],
+            self.conditional_logic,
+        )
+        self.graph = self.graph_setup.setup_graph(self._selected_analysts)
+
     def propagate(self, company_name, trade_date):
         """Run the trading agents graph for a company on a specific date."""
 
         self.ticker = company_name
+
+        # Set market context for data routing (before any data fetching)
+        market = detect_market(company_name)
+        set_market_context(market)
+
+        # Rebuild graph with market-specific memories if needed
+        self._rebuild_graph_for_market(market)
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
@@ -198,13 +238,18 @@ class TradingAgentsGraph:
         args = self.propagator.get_graph_args()
 
         if self.debug:
-            # Debug mode with tracing
+            # Debug mode with tracing — deduplicate repeated messages
             trace = []
+            last_printed_id = None
             for chunk in self.graph.stream(init_agent_state, **args):
                 if len(chunk["messages"]) == 0:
                     pass
                 else:
-                    chunk["messages"][-1].pretty_print()
+                    last_msg = chunk["messages"][-1]
+                    msg_id = getattr(last_msg, "id", id(last_msg))
+                    if msg_id != last_printed_id:
+                        last_msg.pretty_print()
+                        last_printed_id = msg_id
                     trace.append(chunk)
 
             final_state = trace[-1]
@@ -266,20 +311,21 @@ class TradingAgentsGraph:
 
     def reflect_and_remember(self, returns_losses):
         """Reflect on decisions and update memory based on returns."""
+        memories = self._get_memories(self._current_market)
         self.reflector.reflect_bull_researcher(
-            self.curr_state, returns_losses, self.bull_memory
+            self.curr_state, returns_losses, memories["bull"]
         )
         self.reflector.reflect_bear_researcher(
-            self.curr_state, returns_losses, self.bear_memory
+            self.curr_state, returns_losses, memories["bear"]
         )
         self.reflector.reflect_trader(
-            self.curr_state, returns_losses, self.trader_memory
+            self.curr_state, returns_losses, memories["trader"]
         )
         self.reflector.reflect_invest_judge(
-            self.curr_state, returns_losses, self.invest_judge_memory
+            self.curr_state, returns_losses, memories["invest_judge"]
         )
         self.reflector.reflect_risk_manager(
-            self.curr_state, returns_losses, self.risk_manager_memory
+            self.curr_state, returns_losses, memories["risk_manager"]
         )
 
     def process_signal(self, full_signal):

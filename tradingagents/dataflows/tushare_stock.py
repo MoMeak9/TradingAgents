@@ -1,0 +1,315 @@
+"""A-share stock data fetching via tushare (fallback vendor for akshare)."""
+
+import os
+import time
+from datetime import datetime
+from typing import Annotated
+
+import pandas as pd
+
+from .config import get_config
+from .stockstats_utils import _clean_dataframe
+
+
+class TushareError(Exception):
+    """Raised when tushare fails, triggering fallback in route_to_vendor."""
+    pass
+
+
+def _get_tushare_api():
+    """Get tushare pro API instance."""
+    config = get_config()
+    token = config.get("tushare_token", "") or os.getenv("TUSHARE_TOKEN", "")
+    if not token:
+        raise TushareError(
+            "TUSHARE_TOKEN not configured. Set it in config or as environment variable."
+        )
+    try:
+        import tushare as ts
+        ts.set_token(token)
+        return ts.pro_api()
+    except ImportError:
+        raise TushareError(
+            "tushare is not installed. Install with: pip install tushare"
+        )
+    except Exception as e:
+        raise TushareError(f"Failed to initialize tushare API: {e}")
+
+
+def _to_ts_code(symbol: str) -> str:
+    """Convert 6-digit symbol to tushare ts_code format (e.g., 600519.SH)."""
+    if not symbol:
+        raise TushareError("Empty symbol provided")
+    if symbol[0] in ("6", "9"):
+        return f"{symbol}.SH"
+    return f"{symbol}.SZ"
+
+
+def _request_delay():
+    """Add delay between requests."""
+    config = get_config()
+    interval = config.get("cn_request_interval", 0.3)
+    time.sleep(interval)
+
+
+def get_stock_data(
+    symbol: Annotated[str, "A-share stock code, e.g. 600519"],
+    start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
+    end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+) -> str:
+    """Fetch A-share daily OHLCV data via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(symbol)
+        ts_start = start_date.replace("-", "")
+        ts_end = end_date.replace("-", "")
+
+        _request_delay()
+
+        df = pro.daily(ts_code=ts_code, start_date=ts_start, end_date=ts_end)
+
+        if df is None or df.empty:
+            return f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+
+        # Rename to standard format
+        df = df.rename(columns={
+            "trade_date": "Date",
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "vol": "Volume",
+        })
+
+        # Format Date
+        df["Date"] = pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d")
+
+        # Volume: tushare unit is 手 (100 shares)
+        df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce") * 100
+
+        # Round prices
+        for col in ["Open", "High", "Low", "Close"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").round(2)
+
+        # Sort by date ascending
+        df = df.sort_values("Date")
+
+        output_cols = ["Date", "Open", "High", "Low", "Close", "Volume"]
+        available = [c for c in output_cols if c in df.columns]
+        df_out = df[available].set_index("Date")
+
+        csv_string = df_out.to_csv()
+
+        header = f"# Stock data for {symbol} from {start_date} to {end_date}\n"
+        header += f"# Market: A-share (CNY) [tushare]\n"
+        header += f"# Total records: {len(df_out)}\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+        return header + csv_string
+
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare error for {symbol}: {e}")
+
+
+def get_indicators(
+    symbol: Annotated[str, "A-share stock code"],
+    indicator: Annotated[str, "technical indicator name"],
+    curr_date: Annotated[str, "current trading date, YYYY-mm-dd"],
+    look_back_days: Annotated[int, "how many days to look back"] = 30,
+) -> str:
+    """Get technical indicators via tushare + stockstats."""
+    from stockstats import wrap
+    from dateutil.relativedelta import relativedelta
+
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(symbol)
+
+        today = pd.Timestamp.today()
+        start_date = (today - pd.DateOffset(years=15)).strftime("%Y%m%d")
+        end_date_str = today.strftime("%Y%m%d")
+
+        config = get_config()
+        cache_dir = config.get("data_cache_dir", "data_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(
+            cache_dir, f"{symbol}-Tushare-data-{start_date}-{end_date_str}.csv"
+        )
+
+        if os.path.exists(cache_file):
+            data = pd.read_csv(cache_file, on_bad_lines="skip")
+        else:
+            _request_delay()
+            data = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date_str)
+            if data is None or data.empty:
+                raise TushareError(f"No historical data for {symbol}")
+
+            data = data.rename(columns={
+                "trade_date": "Date", "open": "Open", "high": "High",
+                "low": "Low", "close": "Close", "vol": "Volume",
+            })
+            data["Date"] = pd.to_datetime(data["Date"]).dt.strftime("%Y-%m-%d")
+            data["Volume"] = pd.to_numeric(data["Volume"], errors="coerce") * 100
+            data = data.sort_values("Date")
+            data.to_csv(cache_file, index=False)
+
+        data = _clean_dataframe(data)
+        df = wrap(data)
+        df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
+        df[indicator]
+
+        indicator_data = {}
+        for _, row in df.iterrows():
+            date_str = row["Date"]
+            val = row[indicator]
+            indicator_data[date_str] = "N/A" if pd.isna(val) else str(val)
+
+        curr_date_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+        before = curr_date_dt - relativedelta(days=look_back_days)
+
+        ind_string = ""
+        current_dt = curr_date_dt
+        while current_dt >= before:
+            date_str = current_dt.strftime("%Y-%m-%d")
+            value = indicator_data.get(date_str, "N/A: Not a trading day")
+            ind_string += f"{date_str}: {value}\n"
+            current_dt = current_dt - relativedelta(days=1)
+
+        return f"## {indicator} values from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n{ind_string}"
+
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare indicator error for {symbol}: {e}")
+
+
+def get_fundamentals(
+    ticker: Annotated[str, "A-share stock code"],
+    curr_date: Annotated[str, "current date"] = None,
+) -> str:
+    """Get A-share fundamentals via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(ticker)
+
+        _request_delay()
+        df = pro.daily_basic(ts_code=ts_code, fields="ts_code,trade_date,pe,pe_ttm,pb,ps,ps_ttm,total_mv,circ_mv")
+
+        if df is None or df.empty:
+            return f"No fundamentals data for A-share '{ticker}'"
+
+        latest = df.iloc[0]
+        lines = []
+        for col in df.columns:
+            val = latest.get(col)
+            if val is not None and str(val) != "nan":
+                lines.append(f"{col}: {val}")
+
+        header = f"# Company Fundamentals for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        return header + "\n".join(lines)
+
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare fundamentals error for {ticker}: {e}")
+
+
+def get_balance_sheet(
+    ticker: Annotated[str, "A-share stock code"],
+    freq: Annotated[str, "frequency: annual or quarterly"] = "quarterly",
+    curr_date: Annotated[str, "current date"] = None,
+) -> str:
+    """Get A-share balance sheet via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(ticker)
+        _request_delay()
+        df = pro.balancesheet(ts_code=ts_code)
+        if df is None or df.empty:
+            return f"No balance sheet data for A-share '{ticker}'"
+        if len(df) > 8:
+            df = df.head(8)
+        header = f"# Balance Sheet for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        return header + df.to_csv(index=False)
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare balance sheet error for {ticker}: {e}")
+
+
+def get_cashflow(
+    ticker: Annotated[str, "A-share stock code"],
+    freq: Annotated[str, "frequency: annual or quarterly"] = "quarterly",
+    curr_date: Annotated[str, "current date"] = None,
+) -> str:
+    """Get A-share cash flow via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(ticker)
+        _request_delay()
+        df = pro.cashflow(ts_code=ts_code)
+        if df is None or df.empty:
+            return f"No cash flow data for A-share '{ticker}'"
+        if len(df) > 8:
+            df = df.head(8)
+        header = f"# Cash Flow for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        return header + df.to_csv(index=False)
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare cashflow error for {ticker}: {e}")
+
+
+def get_income_statement(
+    ticker: Annotated[str, "A-share stock code"],
+    freq: Annotated[str, "frequency: annual or quarterly"] = "quarterly",
+    curr_date: Annotated[str, "current date"] = None,
+) -> str:
+    """Get A-share income statement via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(ticker)
+        _request_delay()
+        df = pro.income(ts_code=ts_code)
+        if df is None or df.empty:
+            return f"No income statement data for A-share '{ticker}'"
+        if len(df) > 8:
+            df = df.head(8)
+        header = f"# Income Statement for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        return header + df.to_csv(index=False)
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare income error for {ticker}: {e}")
+
+
+def get_insider_transactions(
+    ticker: Annotated[str, "A-share stock code"],
+) -> str:
+    """Get A-share shareholder trading via tushare."""
+    try:
+        pro = _get_tushare_api()
+        ts_code = _to_ts_code(ticker)
+        _request_delay()
+        df = pro.stk_holdertrade(ts_code=ts_code)
+        if df is None or df.empty:
+            return (
+                f"A 股 {ticker} 暂无近期股东增减持数据。\n"
+                f"注: A 股市场没有类似美股的内部交易披露制度。"
+            )
+        if len(df) > 20:
+            df = df.head(20)
+        header = f"# Shareholder Trades for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        return header + df.to_csv(index=False)
+    except TushareError:
+        raise
+    except Exception as e:
+        raise TushareError(f"tushare insider error for {ticker}: {e}")

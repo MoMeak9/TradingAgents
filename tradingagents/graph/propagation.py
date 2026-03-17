@@ -6,6 +6,7 @@ from tradingagents.agents.utils.agent_states import (
     InvestDebateState,
     RiskDebateState,
 )
+from tradingagents.dataflows.market_utils import get_market_info
 
 
 class Propagator:
@@ -19,10 +20,12 @@ class Propagator:
         self, company_name: str, trade_date: str
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
+        market_context = get_market_info(company_name)
         return {
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
             "trade_date": str(trade_date),
+            "market_context": market_context,
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",

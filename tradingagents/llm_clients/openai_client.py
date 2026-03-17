@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Optional
 
@@ -5,6 +6,17 @@ from langchain_openai import ChatOpenAI
 
 from .base_client import BaseLLMClient
 from .validators import validate_model
+
+logger = logging.getLogger(__name__)
+
+# Mapping of provider name to its required environment variable
+_PROVIDER_API_KEY_ENV = {
+    "xai": "XAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+    "custom": "CUSTOM_LLM_API_KEY",
+}
 
 
 class UnifiedChatOpenAI(ChatOpenAI):
@@ -39,39 +51,28 @@ class OpenAIClient(BaseLLMClient):
         super().__init__(model, base_url, **kwargs)
         self.provider = provider.lower()
 
+    _PROVIDER_BASE_URLS = {
+        "xai": "https://api.x.ai/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
+        "deepseek": "https://api.deepseek.com",
+        "minimax": "https://api.minimaxi.com/v1",
+        "ollama": "http://localhost:11434/v1",
+    }
+
     def get_llm(self) -> Any:
         """Return configured ChatOpenAI instance."""
         llm_kwargs = {"model": self.model}
 
-        if self.provider == "xai":
-            llm_kwargs["base_url"] = "https://api.x.ai/v1"
-            api_key = os.environ.get("XAI_API_KEY")
-            if api_key:
-                llm_kwargs["api_key"] = api_key
-        elif self.provider == "openrouter":
-            llm_kwargs["base_url"] = "https://openrouter.ai/api/v1"
-            api_key = os.environ.get("OPENROUTER_API_KEY")
-            if api_key:
-                llm_kwargs["api_key"] = api_key
-        elif self.provider == "deepseek":
-            llm_kwargs["base_url"] = "https://api.deepseek.com"
-            api_key = os.environ.get("DEEPSEEK_API_KEY")
-            if api_key:
-                llm_kwargs["api_key"] = api_key
-        elif self.provider == "minimax":
-            llm_kwargs["base_url"] = "https://api.minimaxi.com/v1"
-            api_key = os.environ.get("MINIMAX_API_KEY")
-            if api_key:
-                llm_kwargs["api_key"] = api_key
-        elif self.provider == "ollama":
-            llm_kwargs["base_url"] = "http://localhost:11434/v1"
-            llm_kwargs["api_key"] = "ollama"  # Ollama doesn't require auth
+        if self.provider == "ollama":
+            llm_kwargs["base_url"] = self._PROVIDER_BASE_URLS["ollama"]
+            llm_kwargs["api_key"] = "ollama"
         elif self.provider == "custom":
             if self.base_url:
                 llm_kwargs["base_url"] = self.base_url
-            api_key = os.environ.get("CUSTOM_LLM_API_KEY")
-            if api_key:
-                llm_kwargs["api_key"] = api_key
+            self._set_api_key(llm_kwargs)
+        elif self.provider in self._PROVIDER_BASE_URLS:
+            llm_kwargs["base_url"] = self._PROVIDER_BASE_URLS[self.provider]
+            self._set_api_key(llm_kwargs)
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
@@ -80,6 +81,23 @@ class OpenAIClient(BaseLLMClient):
                 llm_kwargs[key] = self.kwargs[key]
 
         return UnifiedChatOpenAI(**llm_kwargs)
+
+    def _set_api_key(self, llm_kwargs: dict) -> None:
+        """Read the provider's API key from env and warn if missing."""
+        env_var = _PROVIDER_API_KEY_ENV.get(self.provider)
+        if not env_var:
+            return
+        api_key = os.environ.get(env_var)
+        if api_key:
+            llm_kwargs["api_key"] = api_key
+        else:
+            logger.warning(
+                "%s environment variable is not set. "
+                "API calls to %s will likely fail. "
+                "Set it in your .env file or environment.",
+                env_var,
+                self.provider,
+            )
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""

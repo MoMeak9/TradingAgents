@@ -1,5 +1,6 @@
 import time
 import json
+from tradingagents.agents.utils.cn_market_prompts import get_prompt_suffix
 
 
 def create_risk_manager(llm, memory):
@@ -36,12 +37,16 @@ Deliverables:
 
 ---
 
-**Analysts Debate History:**  
+**Analysts Debate History:**
 {history}
 
 ---
 
 Focus on actionable insights and continuous improvement. Build on past lessons, critically evaluate all perspectives, and ensure each decision advances better outcomes."""
+
+        # Append CN market suffix if analyzing A-share
+        market_ctx = state.get("market_context", {})
+        prompt += get_prompt_suffix(market_ctx.get("market", "us"), "risk")
 
         response = llm.invoke(prompt)
 
