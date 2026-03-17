@@ -156,6 +156,11 @@ class TradingAgentsGraph:
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
 
+        elif provider == "custom":
+            # Enable streaming to keep connection alive through proxy gateways
+            # and avoid 504 timeouts on long-context requests.
+            kwargs["streaming"] = True
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

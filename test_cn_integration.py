@@ -4,15 +4,20 @@
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-# 配置使用 minimax provider（有可用的 API key）
+# 配置使用自定义 LLM 服务
+_custom_url = os.getenv("CUSTOM_LLM_API_URL", "").rstrip("/")
+if not _custom_url.endswith("/v1"):
+    _custom_url = _custom_url + "/v1"
+
 config = DEFAULT_CONFIG.copy()
-config["llm_provider"] = "minimax"
-config["deep_think_llm"] = "MiniMax-M2.5"
-config["quick_think_llm"] = "MiniMax-M2.5"
-config["backend_url"] = "https://api.minimaxi.com/v1"
+config["llm_provider"] = "custom"
+config["deep_think_llm"] = os.getenv("CUSTOM_LLM_MODEL", "gpt-5.4")
+config["quick_think_llm"] = os.getenv("CUSTOM_LLM_MODEL", "gpt-5.4")
+config["backend_url"] = _custom_url
 config["max_debate_rounds"] = 1
 config["max_risk_discuss_rounds"] = 1
 
@@ -29,6 +34,7 @@ print("TradingAgents 集成测试 - 000001 平安银行")
 print("=" * 60)
 print(f"LLM Provider: {config['llm_provider']}")
 print(f"Model: {config['quick_think_llm']}")
+print(f"Backend URL: {config['backend_url']}")
 print(f"CN Data Vendor: tushare")
 print()
 

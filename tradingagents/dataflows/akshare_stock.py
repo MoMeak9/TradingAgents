@@ -131,7 +131,7 @@ def get_stock_data(
         return header + csv_string
 
     except Exception as e:
-        return f"Error fetching A-share data for {symbol} via akshare: {e}"
+        raise
     finally:
         restore_proxy(saved_proxy)
 
@@ -256,7 +256,7 @@ def get_indicators(
             current_dt = current_dt - relativedelta(days=1)
 
     except Exception as e:
-        return f"Error calculating {indicator} for A-share {symbol} via akshare: {e}"
+        raise
 
     result_str = (
         f"## {indicator} values from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n"
@@ -295,7 +295,7 @@ def get_fundamentals(
         return header + "\n".join(lines)
 
     except Exception as e:
-        return f"Error retrieving fundamentals for A-share {ticker}: {str(e)}"
+        raise
 
 
 def get_balance_sheet(
@@ -325,7 +325,7 @@ def get_balance_sheet(
         return header + csv_string
 
     except Exception as e:
-        return f"Error retrieving balance sheet for A-share {ticker}: {str(e)}"
+        raise
 
 
 def get_cashflow(
@@ -354,7 +354,7 @@ def get_cashflow(
         return header + csv_string
 
     except Exception as e:
-        return f"Error retrieving cash flow for A-share {ticker}: {str(e)}"
+        raise
 
 
 def get_income_statement(
@@ -383,7 +383,7 @@ def get_income_statement(
         return header + csv_string
 
     except Exception as e:
-        return f"Error retrieving income statement for A-share {ticker}: {str(e)}"
+        raise
 
 
 def get_insider_transactions(
