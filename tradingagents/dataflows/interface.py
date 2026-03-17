@@ -39,17 +39,24 @@ from .akshare_news import (
     get_global_news as get_akshare_global_news,
 )
 
-# Tushare vendor imports (primary for A-share)
-from .tushare_stock import (
-    get_stock_data as get_tushare_stock,
-    get_indicators as get_tushare_indicators,
-    get_fundamentals as get_tushare_fundamentals,
-    get_balance_sheet as get_tushare_balance_sheet,
-    get_cashflow as get_tushare_cashflow,
-    get_income_statement as get_tushare_income_statement,
-    get_insider_transactions as get_tushare_insider_transactions,
-    TushareError,
-)
+# Tushare vendor imports (primary for A-share, optional: requires tushare package)
+try:
+    import tushare as _tushare_check  # verify the package is actually installed
+    del _tushare_check
+    from .tushare_stock import (
+        get_stock_data as get_tushare_stock,
+        get_indicators as get_tushare_indicators,
+        get_fundamentals as get_tushare_fundamentals,
+        get_balance_sheet as get_tushare_balance_sheet,
+        get_cashflow as get_tushare_cashflow,
+        get_income_statement as get_tushare_income_statement,
+        get_insider_transactions as get_tushare_insider_transactions,
+        TushareError,
+    )
+    _TUSHARE_AVAILABLE = True
+except ImportError:
+    _TUSHARE_AVAILABLE = False
+    TushareError = Exception  # fallback so references don't break
 
 # Market detection
 from .market_utils import detect_market, normalize_symbol, normalize_hk_symbol
@@ -141,7 +148,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
         "akshare": get_akshare_stock,
-        "tushare": get_tushare_stock,
+        **({"tushare": get_tushare_stock} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_stock} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_stock} if _HK_AVAILABLE else {}),
     },
@@ -150,7 +157,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
         "akshare": get_akshare_indicators,
-        "tushare": get_tushare_indicators,
+        **({"tushare": get_tushare_indicators} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_indicators} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_indicators} if _HK_AVAILABLE else {}),
     },
@@ -159,7 +166,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_fundamentals,
         "yfinance": get_yfinance_fundamentals,
         "akshare": get_akshare_fundamentals,
-        "tushare": get_tushare_fundamentals,
+        **({"tushare": get_tushare_fundamentals} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_fundamentals} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_fundamentals} if _HK_AVAILABLE else {}),
     },
@@ -167,7 +174,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
         "akshare": get_akshare_balance_sheet,
-        "tushare": get_tushare_balance_sheet,
+        **({"tushare": get_tushare_balance_sheet} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_balance_sheet} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_balance_sheet} if _HK_AVAILABLE else {}),
     },
@@ -175,7 +182,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
         "akshare": get_akshare_cashflow,
-        "tushare": get_tushare_cashflow,
+        **({"tushare": get_tushare_cashflow} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_cashflow} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_cashflow} if _HK_AVAILABLE else {}),
     },
@@ -183,7 +190,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
         "akshare": get_akshare_income_statement,
-        "tushare": get_tushare_income_statement,
+        **({"tushare": get_tushare_income_statement} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_income_statement} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_income_statement} if _HK_AVAILABLE else {}),
     },
@@ -202,7 +209,7 @@ VENDOR_METHODS = {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
         "akshare": get_akshare_insider_transactions,
-        "tushare": get_tushare_insider_transactions,
+        **({"tushare": get_tushare_insider_transactions} if _TUSHARE_AVAILABLE else {}),
         **({"baostock": get_baostock_insider_transactions} if _BAOSTOCK_AVAILABLE else {}),
         **({"hk": get_hk_insider_transactions} if _HK_AVAILABLE else {}),
     },

@@ -227,30 +227,43 @@ def get_fundamentals(
         ).strftime("%Y%m%d")
 
         _request_delay()
-        df_basic = _call_with_retry(
-            pro.daily_basic,
-            ts_code=ts_code,
-            start_date=start_date_basic,
-            end_date=ref_date,
-            fields="ts_code,trade_date,turnover_rate,pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_mv,circ_mv",
-        )
+        df_basic = None
+        try:
+            df_basic = _call_with_retry(
+                pro.daily_basic,
+                ts_code=ts_code,
+                start_date=start_date_basic,
+                end_date=ref_date,
+                fields="ts_code,trade_date,turnover_rate,pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_mv,circ_mv",
+            )
+        except Exception:
+            pass  # handled below; fina_indicator may still succeed
 
         # fina_indicator: get latest 4 quarterly reports (doc_id=112)
-        # period is the last day of each fiscal quarter, e.g. 20231231
+        # Limit to last 2 years to avoid pulling entire history and timing out
+        start_date_fina = (
+            pd.Timestamp(ref_date) - pd.DateOffset(years=2)
+        ).strftime("%Y%m%d")
         _request_delay()
-        df_fina = _call_with_retry(
-            pro.fina_indicator,
-            ts_code=ts_code,
-            fields=(
-                "ts_code,ann_date,end_date,"
-                "eps,dt_eps,bps,roe,roe_waa,roe_dt,roa,roic,"
-                "grossprofit_margin,netprofit_margin,"
-                "current_ratio,quick_ratio,cash_ratio,"
-                "debt_to_assets,assets_to_eqt,"
-                "ocf_to_or,ocf_to_opincome,"
-                "ebit,ebitda,cfps"
-            ),
-        )
+        df_fina = None
+        try:
+            df_fina = _call_with_retry(
+                pro.fina_indicator,
+                ts_code=ts_code,
+                start_date=start_date_fina,
+                end_date=ref_date,
+                fields=(
+                    "ts_code,ann_date,end_date,"
+                    "eps,dt_eps,bps,roe,roe_waa,roe_dt,roa,roic,"
+                    "grossprofit_margin,netprofit_margin,"
+                    "current_ratio,quick_ratio,cash_ratio,"
+                    "debt_to_assets,assets_to_eqt,"
+                    "ocf_to_or,ocf_to_opincome,"
+                    "ebit,ebitda,cfps"
+                ),
+            )
+        except Exception:
+            pass  # handled below
 
         lines = []
 
