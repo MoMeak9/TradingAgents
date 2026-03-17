@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2026-03-18",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 10.5,
+      "confidence": 0.88,
+      "risk_score": 0.72,
+      "reasoning": "报告明确给出卖出建议，核心原因是当前缺乏基本面改善、技术确认、资金回流和催化证据，继续持有更像押注，且存在低估值陷阱与资金效率低下的机会成本。"
+    },
+    "elapsed": 680.2,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3900,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3211
+    }
+  }
+]
