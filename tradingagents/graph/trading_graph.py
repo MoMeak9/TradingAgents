@@ -240,8 +240,15 @@ class TradingAgentsGraph:
         )
         self.graph = self.graph_setup.setup_graph(self._selected_analysts)
 
-    def propagate(self, company_name, trade_date):
-        """Run the trading agents graph for a company on a specific date."""
+    def propagate(self, company_name, trade_date, on_node=None):
+        """Run the trading agents graph for a company on a specific date.
+
+        Args:
+            company_name: Ticker symbol.
+            trade_date: Analysis date string.
+            on_node: Optional callback ``fn(node_name: str)`` invoked each time
+                     a graph node finishes execution.  Useful for progress UIs.
+        """
 
         self.ticker = company_name
 
@@ -258,22 +265,51 @@ class TradingAgentsGraph:
         )
         args = self.propagator.get_graph_args()
 
-        if self.debug:
-            # Debug mode with tracing — deduplicate repeated messages
-            trace = []
+        if on_node is not None or self.debug:
+            # Streaming mode — use "updates" to get per-node granularity
+            stream_kwargs = {
+                "stream_mode": "values",
+                "config": args.get("config", {}),
+            }
+            final_state = None
             last_printed_id = None
-            for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) == 0:
-                    pass
-                else:
-                    last_msg = chunk["messages"][-1]
-                    msg_id = getattr(last_msg, "id", id(last_msg))
-                    if msg_id != last_printed_id:
-                        last_msg.pretty_print()
-                        last_printed_id = msg_id
-                    trace.append(chunk)
+            prev_fields = {}  # track report field lengths to detect changes
 
-            final_state = trace[-1]
+            for chunk in self.graph.stream(init_agent_state, **stream_kwargs):
+                final_state = chunk
+
+                if on_node is not None:
+                    # Detect which phase just progressed by watching state fields
+                    cur_fields = {
+                        k: len(chunk.get(k, "") or "")
+                        for k in (
+                            "market_report", "sentiment_report", "news_report",
+                            "fundamentals_report", "china_market_report",
+                            "investment_plan", "trader_investment_plan",
+                            "final_trade_decision",
+                        )
+                    }
+                    # Also track debate / risk counts
+                    inv_count = chunk.get("investment_debate_state", {}).get("count", 0)
+                    risk_count = chunk.get("risk_debate_state", {}).get("count", 0)
+                    cur_fields["_inv_count"] = inv_count
+                    cur_fields["_risk_count"] = risk_count
+
+                    if cur_fields != prev_fields:
+                        # Figure out which field changed
+                        for field, val in cur_fields.items():
+                            if val != prev_fields.get(field, 0):
+                                on_node(field)
+                        prev_fields = cur_fields
+
+                if self.debug:
+                    msgs = chunk.get("messages", [])
+                    if msgs:
+                        last_msg = msgs[-1]
+                        msg_id = getattr(last_msg, "id", id(last_msg))
+                        if msg_id != last_printed_id:
+                            last_msg.pretty_print()
+                            last_printed_id = msg_id
         else:
             # Standard mode without tracing
             final_state = self.graph.invoke(init_agent_state, **args)

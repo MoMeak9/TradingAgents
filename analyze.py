@@ -152,6 +152,49 @@ def _log(msg: str, ticker: str = "", style: str = ""):
         console.print(f"  {prefix} {tag}{msg}")
 
 
+# ─── 阶段映射 ────────────────────────────────────────────────────
+# 将 on_node 回调的 field 名映射到人类可读的阶段名和权重
+# 权重用于进度条推进（总和在 analyze_single 中动态计算）
+PHASE_MAP = {
+    "market_report":            ("市场分析", 2),
+    "sentiment_report":         ("情绪分析", 2),
+    "news_report":              ("新闻分析", 2),
+    "fundamentals_report":      ("基本面分析", 2),
+    "china_market_report":      ("中国市场分析", 2),
+    "_inv_count":               ("投资辩论", 1),
+    "investment_plan":          ("研究经理决策", 2),
+    "trader_investment_plan":   ("交易员计划", 2),
+    "_risk_count":              ("风险辩论", 1),
+    "final_trade_decision":     ("最终决策", 3),
+}
+
+
+def _calc_total_steps(analysts: List[str], config: Dict[str, Any]) -> int:
+    """根据分析师和辩论轮数估算总步数。"""
+    analyst_field_map = {
+        "market": "market_report",
+        "fundamentals": "fundamentals_report",
+        "news": "news_report",
+        "social": "sentiment_report",
+        "china_market": "china_market_report",
+    }
+    steps = 0
+    for a in analysts:
+        field = analyst_field_map.get(a)
+        if field and field in PHASE_MAP:
+            steps += PHASE_MAP[field][1]
+    # 辩论阶段: 每轮1步
+    debate_rounds = config.get("max_debate_rounds", 1)
+    risk_rounds = config.get("max_risk_discuss_rounds", 1)
+    steps += debate_rounds * 2  # bull + bear 交替
+    steps += risk_rounds * 3    # 三方风控辩论
+    # 固定阶段: 研究经理 + 交易员 + 最终决策
+    steps += PHASE_MAP["investment_plan"][1]
+    steps += PHASE_MAP["trader_investment_plan"][1]
+    steps += PHASE_MAP["final_trade_decision"][1]
+    return max(steps, 1)
+
+
 def analyze_single(
     ticker: str,
     trade_date: str,
@@ -159,8 +202,14 @@ def analyze_single(
     analysts: List[str],
     debug: bool,
     log_fn=None,
+    on_progress=None,
 ) -> Dict[str, Any]:
-    """分析单只股票，返回结果字典。适用于主进程或子进程调用。"""
+    """分析单只股票，返回结果字典。
+
+    Args:
+        on_progress: Optional callback ``fn(phase_name, weight)``
+                     每当一个分析阶段推进时被调用。
+    """
     from tradingagents.graph.trading_graph import TradingAgentsGraph
     from cli.stats_handler import StatsCallbackHandler
 
@@ -169,7 +218,6 @@ def analyze_single(
     result: Dict[str, Any] = {"ticker": ticker, "date": trade_date}
 
     try:
-        # 统计回调
         stats = StatsCallbackHandler()
 
         log("初始化分析图 ...", style="yellow")
@@ -182,7 +230,26 @@ def analyze_single(
         elapsed_init = round(time.time() - t0, 1)
         log(f"初始化完成 ({elapsed_init}s)，开始数据采集与分析 ...", style="green")
 
-        final_state, decision = ta.propagate(ticker, trade_date)
+        # 节点回调：每个阶段推进时更新日志和进度
+        seen_phases = set()
+
+        def _on_node(field: str):
+            phase_info = PHASE_MAP.get(field)
+            if phase_info is None:
+                return
+            name, weight = phase_info
+            # 对于辩论计数器，每次变化都记录（可多次）
+            is_counter = field.startswith("_")
+            if not is_counter:
+                if field in seen_phases:
+                    return
+                seen_phases.add(field)
+            elapsed = round(time.time() - t0, 1)
+            log(f"[{elapsed}s] {name}", style="blue")
+            if on_progress:
+                on_progress(name, weight)
+
+        final_state, decision = ta.propagate(ticker, trade_date, on_node=_on_node)
 
         st = stats.get_stats()
         result["status"] = "success"
@@ -510,11 +577,11 @@ def _make_batch_progress() -> Progress:
 
 
 def _make_stock_progress() -> Progress:
-    """创建每只股票的状态进度条。"""
+    """创建每只股票的细粒度进度条。"""
     return Progress(
         SpinnerColumn("dots"),
-        TextColumn("[bold blue]{task.fields[ticker]}"),
-        BarColumn(bar_width=20),
+        TextColumn("[bold blue]{task.fields[ticker]:>8}"),
+        BarColumn(bar_width=24, complete_style="green"),
         TaskProgressColumn(),
         TextColumn("•"),
         TimeElapsedColumn(),
@@ -535,16 +602,37 @@ def main(argv: Optional[List[str]] = None):
     tickers = args.tickers
     results: List[Dict[str, Any]] = []
     batch_t0 = time.time()
+    total_steps_per_stock = _calc_total_steps(analysts, config)
 
     if len(tickers) == 1 or args.workers <= 1:
         # ── 串行执行（带逐条进度条）──
         batch_progress = _make_batch_progress()
         batch_task = batch_progress.add_task("batch", total=len(tickers))
 
+        stock_progress = _make_stock_progress()
+
         for i, ticker in enumerate(tickers, 1):
             console.rule(f"[bold cyan]{ticker}[/bold cyan]  ({i}/{len(tickers)})")
             _log("开始分析 ...", ticker=ticker, style="bold blue")
-            result = analyze_single(ticker, args.date, config, analysts, args.debug)
+
+            # 每只股票一个细粒度进度条任务
+            stask = stock_progress.add_task(
+                ticker, total=total_steps_per_stock, ticker=ticker, phase="初始化"
+            )
+
+            def _on_progress(phase_name, weight, _stask=stask):
+                stock_progress.update(_stask, advance=weight, phase=phase_name)
+
+            # 用 Group+Live 同时展示总进度和当前股票进度
+            progress_group = Group(batch_progress, stock_progress)
+            with Live(progress_group, console=console, refresh_per_second=4, transient=True):
+                result = analyze_single(
+                    ticker, args.date, config, analysts, args.debug,
+                    on_progress=_on_progress,
+                )
+
+            # Live 退出后，把进度条最终状态补齐然后显示结果
+            stock_progress.update(stask, completed=total_steps_per_stock, phase="[green]完成[/green]")
             results.append(result)
             print_result(result, i, len(tickers))
             console.print()
@@ -553,11 +641,11 @@ def main(argv: Optional[List[str]] = None):
         console.print(batch_progress)
     else:
         # ── 并行执行（带总进度条 + 每股状态）──
+        # 注：跨进程无法传递回调，并行模式使用每股完成级别的刷新
         max_w = min(args.workers, len(tickers))
         console.print(f"  [bold]启动 {max_w} 个并行进程 ...[/bold]\n")
         config_json = _serializable_config(config)
 
-        # 两个 Progress 共享同一个 Live 以避免 "Only one live display" 错误
         batch_progress = _make_batch_progress()
         batch_task = batch_progress.add_task("batch", total=len(tickers))
 
@@ -565,7 +653,7 @@ def main(argv: Optional[List[str]] = None):
         stock_progress = _make_stock_progress()
         for t in tickers:
             tid = stock_progress.add_task(
-                t, total=1, ticker=t, phase="排队中"
+                t, total=total_steps_per_stock, ticker=t, phase="排队中"
             )
             stock_tasks[t] = tid
 
@@ -578,7 +666,6 @@ def main(argv: Optional[List[str]] = None):
                     for t in tickers
                 }
 
-                # 标记已提交的为"分析中"
                 for fut, t in future_map.items():
                     stock_progress.update(stock_tasks[t], phase="[yellow]分析中 ...[/yellow]")
 
@@ -590,10 +677,15 @@ def main(argv: Optional[List[str]] = None):
                     results.append(result)
 
                     if result["status"] == "success":
-                        phase_text = f"[green]✓ {result['decision'].get('action', '')}[/green]"
+                        action = result["decision"].get("action", "")
+                        phase_text = f"[green]✓ {action}[/green]"
                     else:
                         phase_text = "[red]✗ 失败[/red]"
-                    stock_progress.update(stock_tasks[t], completed=1, phase=phase_text)
+                    stock_progress.update(
+                        stock_tasks[t],
+                        completed=total_steps_per_stock,
+                        phase=phase_text,
+                    )
                     batch_progress.update(batch_task, advance=1)
 
         # 打印每条结果
