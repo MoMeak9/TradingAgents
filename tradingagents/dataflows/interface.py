@@ -59,6 +59,8 @@ from .config import get_config, get_market_context
 
 # BaoStock vendor imports (optional, requires baostock package)
 try:
+    import baostock as _baostock_check  # verify the package is actually installed
+    del _baostock_check
     from .baostock_stock import (
         get_stock_data as get_baostock_stock,
         get_indicators as get_baostock_indicators,

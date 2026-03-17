@@ -186,29 +186,136 @@ def get_indicators(
         raise TushareError(f"tushare indicator error for {symbol}: {e}")
 
 
+def _call_with_retry(fn, *args, max_retries: int = 3, **kwargs):
+    """Call a tushare API function with retry on connection errors."""
+    import requests
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+            last_exc = e
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            time.sleep(wait)
+        except Exception:
+            raise
+    raise last_exc
+
+
 def get_fundamentals(
     ticker: Annotated[str, "A-share stock code"],
     curr_date: Annotated[str, "current date"] = None,
 ) -> str:
-    """Get A-share fundamentals via tushare."""
+    """Get A-share fundamentals via tushare.
+
+    Combines daily_basic (market valuation metrics) with fina_indicator
+    (financial ratios, ref: https://tushare.pro/document/2?doc_id=112).
+    """
     try:
         pro = _get_tushare_api()
         ts_code = _to_ts_code(ticker)
 
+        # Determine reference date (YYYYMMDD)
+        if curr_date:
+            ref_date = curr_date.replace("-", "")
+        else:
+            ref_date = datetime.now().strftime("%Y%m%d")
+
+        # For daily_basic, look back up to 10 trading days to find the latest record
+        start_date_basic = (
+            pd.Timestamp(ref_date) - pd.DateOffset(days=14)
+        ).strftime("%Y%m%d")
+
         _request_delay()
-        df = pro.daily_basic(ts_code=ts_code, fields="ts_code,trade_date,pe,pe_ttm,pb,ps,ps_ttm,total_mv,circ_mv")
+        df_basic = _call_with_retry(
+            pro.daily_basic,
+            ts_code=ts_code,
+            start_date=start_date_basic,
+            end_date=ref_date,
+            fields="ts_code,trade_date,turnover_rate,pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_mv,circ_mv",
+        )
 
-        if df is None or df.empty:
-            return f"No fundamentals data for A-share '{ticker}'"
+        # fina_indicator: get latest 4 quarterly reports (doc_id=112)
+        # period is the last day of each fiscal quarter, e.g. 20231231
+        _request_delay()
+        df_fina = _call_with_retry(
+            pro.fina_indicator,
+            ts_code=ts_code,
+            fields=(
+                "ts_code,ann_date,end_date,"
+                "eps,dt_eps,bps,roe,roe_waa,roe_dt,roa,roic,"
+                "grossprofit_margin,netprofit_margin,"
+                "current_ratio,quick_ratio,cash_ratio,"
+                "debt_to_assets,assets_to_eqt,"
+                "ocf_to_or,ocf_to_opincome,"
+                "ebit,ebitda,cfps"
+            ),
+        )
 
-        latest = df.iloc[0]
         lines = []
-        for col in df.columns:
-            val = latest.get(col)
-            if val is not None and str(val) != "nan":
-                lines.append(f"{col}: {val}")
+
+        # --- Market valuation from daily_basic ---
+        if df_basic is not None and not df_basic.empty:
+            latest_basic = df_basic.sort_values("trade_date", ascending=False).iloc[0]
+            lines.append("## Market Valuation Metrics")
+            field_labels = {
+                "trade_date": "Trade Date",
+                "turnover_rate": "Turnover Rate (%)",
+                "pe": "P/E Ratio",
+                "pe_ttm": "P/E TTM",
+                "pb": "P/B Ratio",
+                "ps": "P/S Ratio",
+                "ps_ttm": "P/S TTM",
+                "dv_ratio": "Dividend Yield (%)",
+                "dv_ttm": "Dividend Yield TTM (%)",
+                "total_mv": "Total Market Cap (CNY 10k)",
+                "circ_mv": "Circulating Market Cap (CNY 10k)",
+            }
+            for col, label in field_labels.items():
+                val = latest_basic.get(col)
+                if val is not None and str(val) not in ("nan", "None", ""):
+                    lines.append(f"{label}: {val}")
+
+        # --- Financial ratios from fina_indicator ---
+        if df_fina is not None and not df_fina.empty:
+            df_fina = df_fina.sort_values("end_date", ascending=False)
+            latest_fina = df_fina.iloc[0]
+            lines.append("")
+            lines.append("## Financial Indicators (fina_indicator)")
+            fina_labels = {
+                "ann_date": "Announcement Date",
+                "end_date": "Report Period",
+                "eps": "EPS (CNY)",
+                "dt_eps": "Diluted EPS (CNY)",
+                "bps": "BPS (CNY)",
+                "roe": "ROE (%)",
+                "roe_waa": "ROE Weighted (%)",
+                "roe_dt": "ROE Deducted (%)",
+                "roa": "ROA (%)",
+                "roic": "ROIC (%)",
+                "grossprofit_margin": "Gross Profit Margin (%)",
+                "netprofit_margin": "Net Profit Margin (%)",
+                "current_ratio": "Current Ratio",
+                "quick_ratio": "Quick Ratio",
+                "cash_ratio": "Cash Ratio",
+                "debt_to_assets": "Debt-to-Assets (%)",
+                "assets_to_eqt": "Assets-to-Equity",
+                "ocf_to_or": "OCF / Revenue",
+                "ocf_to_opincome": "OCF / Operating Income",
+                "ebit": "EBIT (CNY)",
+                "ebitda": "EBITDA (CNY)",
+                "cfps": "Cash Flow Per Share (CNY)",
+            }
+            for col, label in fina_labels.items():
+                val = latest_fina.get(col)
+                if val is not None and str(val) not in ("nan", "None", ""):
+                    lines.append(f"{label}: {val}")
+
+        if not lines:
+            return f"No fundamentals data found for A-share '{ticker}'"
 
         header = f"# Company Fundamentals for {ticker} (A-share, CNY) [tushare]\n"
+        header += f"# Reference Date: {curr_date or datetime.now().strftime('%Y-%m-%d')}\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         return header + "\n".join(lines)
 
@@ -227,10 +334,20 @@ def get_balance_sheet(
     try:
         pro = _get_tushare_api()
         ts_code = _to_ts_code(ticker)
+        ref_date = (curr_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        start_date = (
+            pd.Timestamp(ref_date) - pd.DateOffset(years=3)
+        ).strftime("%Y%m%d")
         _request_delay()
-        df = pro.balancesheet(ts_code=ts_code)
+        df = _call_with_retry(
+            pro.balancesheet,
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=ref_date,
+        )
         if df is None or df.empty:
             return f"No balance sheet data for A-share '{ticker}'"
+        df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
         header = f"# Balance Sheet for {ticker} (A-share, CNY) [tushare]\n"
@@ -251,10 +368,20 @@ def get_cashflow(
     try:
         pro = _get_tushare_api()
         ts_code = _to_ts_code(ticker)
+        ref_date = (curr_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        start_date = (
+            pd.Timestamp(ref_date) - pd.DateOffset(years=3)
+        ).strftime("%Y%m%d")
         _request_delay()
-        df = pro.cashflow(ts_code=ts_code)
+        df = _call_with_retry(
+            pro.cashflow,
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=ref_date,
+        )
         if df is None or df.empty:
             return f"No cash flow data for A-share '{ticker}'"
+        df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
         header = f"# Cash Flow for {ticker} (A-share, CNY) [tushare]\n"
@@ -275,10 +402,20 @@ def get_income_statement(
     try:
         pro = _get_tushare_api()
         ts_code = _to_ts_code(ticker)
+        ref_date = (curr_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        start_date = (
+            pd.Timestamp(ref_date) - pd.DateOffset(years=3)
+        ).strftime("%Y%m%d")
         _request_delay()
-        df = pro.income(ts_code=ts_code)
+        df = _call_with_retry(
+            pro.income,
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=ref_date,
+        )
         if df is None or df.empty:
             return f"No income statement data for A-share '{ticker}'"
+        df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
         header = f"# Income Statement for {ticker} (A-share, CNY) [tushare]\n"
