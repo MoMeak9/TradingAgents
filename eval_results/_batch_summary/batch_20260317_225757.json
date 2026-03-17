@@ -1,0 +1,80 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 9.6,
+      "confidence": 0.82,
+      "risk_score": 0.72,
+      "reasoning": "当前缺乏足够证据支持继续持有或买入，基本面、技术面与催化剂均未得到验证，应优先降低风险暴露；已持有建议减仓或退出，未持有则不建仓，等待后续改善信号再评估。"
+    },
+    "elapsed": 666.4,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3287,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3428
+    }
+  },
+  {
+    "ticker": "600519",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 1500.0,
+      "confidence": 0.9,
+      "risk_score": 0.7,
+      "reasoning": "报告明确建议卖出，核心理由是当前缺乏估值、趋势、量价和基本面边际改善的验证，继续高仓位持有不符合证据质量，应纪律性减仓至明显低配，避免因公司质量优秀而放松估值与仓位纪律。"
+    },
+    "elapsed": 675.8,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3421,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3485
+    }
+  },
+  {
+    "ticker": "300750",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "买入",
+      "target_price": 300.0,
+      "confidence": 0.82,
+      "risk_score": 0.62,
+      "reasoning": "报告明确建议买入，认为宁德时代中期修复逻辑未被推翻，龙头优势、行业集中度提升及储能与海外业务构成支撑；但因实时交易数据不足，执行上应降低强度，采取10%-15%小仓试探、验证后再加仓的方式。"
+    },
+    "elapsed": 665.3,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3605,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 4054
+    }
+  }
+]

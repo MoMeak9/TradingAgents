@@ -1,0 +1,80 @@
+[
+  {
+    "ticker": "600036",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 37.0,
+      "confidence": 0.95,
+      "risk_score": 0.72,
+      "reasoning": "报告明确建议卖出，核心原因是当前缺乏技术、基本面、新闻和情绪四条验证链，买入证据严重不足；虽是优质银行，但现阶段缺少明确催化与趋势确认，继续持有面临机会成本和不确定性，目标价以3个月约37元为代表。"
+    },
+    "elapsed": 670.9,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3090,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3719
+    }
+  },
+  {
+    "ticker": "600897",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 13.5,
+      "confidence": 0.9,
+      "risk_score": 0.7,
+      "reasoning": "报告明确给出卖出结论，核心理由是当前缺少估值、技术、情绪和基本面增量验证，继续持有属于证据不足下占用仓位，风险收益比不具吸引力，应分步退出并暂时回避。"
+    },
+    "elapsed": 656.6,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3450,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3089
+    }
+  },
+  {
+    "ticker": "601127",
+    "date": "2026-03-17",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 78.0,
+      "confidence": 0.9,
+      "risk_score": 0.85,
+      "reasoning": "报告明确建议卖出：空仓者不买，有仓者减仓并在反弹中继续退出。核心原因是当前缺乏基本面、技术面和情绪面的验证，无法支撑继续持有高波动、高预期标的，应优先回收风险预算。"
+    },
+    "elapsed": 655.8,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3783,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 4126
+    }
+  }
+]
