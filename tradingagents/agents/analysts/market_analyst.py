@@ -1,90 +1,379 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+import logging
 import time
 import json
-from tradingagents.agents.utils.agent_utils import get_stock_data, get_indicators
-from tradingagents.agents.utils.cn_market_prompts import get_prompt_suffix
-from tradingagents.dataflows.config import get_config
+import traceback
+
+logger = logging.getLogger(__name__)
+
+# Import Google tool call handler
+from tradingagents.agents.utils.google_tool_handler import GoogleToolCallHandler
+
+# Import market router utilities
+from tradingagents.agents.utils.market_router import (
+    get_company_name,
+    get_market_info,
+    needs_prefetch,
+    is_dashscope_model,
+    is_deepseek_model,
+    is_zhipu_model,
+)
+
+# Import tool functions
+from tradingagents.agents.utils.core_stock_tools import get_stock_data
+from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
 
-def create_market_analyst(llm):
+def create_market_analyst(llm, toolkit=None):
 
     def market_analyst_node(state):
+        logger.debug(f"===== Market analyst node started =====")
+
+        # Tool call counter - prevent infinite loops
+        tool_call_count = state.get("market_tool_call_count", 0)
+        max_tool_calls = 3
+        logger.info(f"Current tool call count: {tool_call_count}/{max_tool_calls}")
+
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
-        company_name = state["company_of_interest"]
 
-        tools = [
-            get_stock_data,
-            get_indicators,
-        ]
+        logger.debug(f"Input params: ticker={ticker}, date={current_date}")
+        logger.debug(f"Message count in state: {len(state.get('messages', []))}")
+        logger.debug(f"Existing market report: {state.get('market_report', 'None')}")
 
-        system_message = (
-            """You are a trading assistant tasked with analyzing financial markets. Your role is to select the **most relevant indicators** for a given market condition or trading strategy from the following list. The goal is to choose up to **8 indicators** that provide complementary insights without redundancy. Categories and each category's indicators are:
+        # Get market info from market_router
+        market_info = get_market_info(ticker)
 
-Moving Averages:
-- close_50_sma: 50 SMA: A medium-term trend indicator. Usage: Identify trend direction and serve as dynamic support/resistance. Tips: It lags price; combine with faster indicators for timely signals.
-- close_200_sma: 200 SMA: A long-term trend benchmark. Usage: Confirm overall market trend and identify golden/death cross setups. Tips: It reacts slowly; best for strategic trend confirmation rather than frequent trading entries.
-- close_10_ema: 10 EMA: A responsive short-term average. Usage: Capture quick shifts in momentum and potential entry points. Tips: Prone to noise in choppy markets; use alongside longer averages for filtering false signals.
+        logger.debug(f"Stock type: {ticker} -> {market_info['market_name']} ({market_info['currency_name']})")
 
-MACD Related:
-- macd: MACD: Computes momentum via differences of EMAs. Usage: Look for crossovers and divergence as signals of trend changes. Tips: Confirm with other indicators in low-volatility or sideways markets.
-- macds: MACD Signal: An EMA smoothing of the MACD line. Usage: Use crossovers with the MACD line to trigger trades. Tips: Should be part of a broader strategy to avoid false positives.
-- macdh: MACD Histogram: Shows the gap between the MACD line and its signal. Usage: Visualize momentum strength and spot divergence early. Tips: Can be volatile; complement with additional filters in fast-moving markets.
+        # Get company name
+        company_name = get_company_name(ticker)
+        logger.debug(f"Company name: {ticker} -> {company_name}")
 
-Momentum Indicators:
-- rsi: RSI: Measures momentum to flag overbought/oversold conditions. Usage: Apply 70/30 thresholds and watch for divergence to signal reversals. Tips: In strong trends, RSI may remain extreme; always cross-check with trend analysis.
+        # Use core_stock_tools and technical_indicators_tools
+        logger.info(f"[Market Analyst] Using core stock tools for market data")
+        tools = [get_stock_data, get_indicators]
 
-Volatility Indicators:
-- boll: Bollinger Middle: A 20 SMA serving as the basis for Bollinger Bands. Usage: Acts as a dynamic benchmark for price movement. Tips: Combine with the upper and lower bands to effectively spot breakouts or reversals.
-- boll_ub: Bollinger Upper Band: Typically 2 standard deviations above the middle line. Usage: Signals potential overbought conditions and breakout zones. Tips: Confirm signals with other tools; prices may ride the band in strong trends.
-- boll_lb: Bollinger Lower Band: Typically 2 standard deviations below the middle line. Usage: Indicates potential oversold conditions. Tips: Use additional analysis to avoid false reversal signals.
-- atr: ATR: Averages true range to measure volatility. Usage: Set stop-loss levels and adjust position sizes based on current market volatility. Tips: It's a reactive measure, so use it as part of a broader risk management strategy.
-
-Volume-Based Indicators:
-- vwma: VWMA: A moving average weighted by volume. Usage: Confirm trends by integrating price action with volume data. Tips: Watch for skewed results from volume spikes; use in combination with other volume analyses.
-
-- Select indicators that provide diverse and complementary information. Avoid redundancy (e.g., do not select both rsi and stochrsi). Also briefly explain why they are suitable for the given market context. When you tool call, please use the exact name of the indicators provided above as they are defined parameters, otherwise your call will fail. Please make sure to call get_stock_data first to retrieve the CSV that is needed to generate indicators. Then use get_indicators with the specific indicator names. Write a very detailed and nuanced report of the trends you observe. Do not simply state the trends are mixed, provide detailed and finegrained analysis and insights that may help traders make decisions."""
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
-        )
-
-        # Append CN market suffix if analyzing A-share
-        market_ctx = state.get("market_context", {})
-        system_message += get_prompt_suffix(market_ctx.get("market", "us"), "analyst")
+        # Get tool names for debug
+        tool_names_debug = []
+        for tool in tools:
+            if hasattr(tool, 'name'):
+                tool_names_debug.append(tool.name)
+            elif hasattr(tool, '__name__'):
+                tool_names_debug.append(tool.__name__)
+            else:
+                tool_names_debug.append(str(tool))
+        logger.info(f"[Market Analyst] Bound tools: {tool_names_debug}")
+        logger.info(f"[Market Analyst] Target market: {market_info['market_name']}")
 
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "You are a helpful AI assistant, collaborating with other assistants."
-                    " Use the provided tools to progress towards answering the question."
-                    " If you are unable to fully answer, that's OK; another assistant with different tools"
-                    " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. The company we want to look at is {ticker}",
+                    "你是一位专业的股票技术分析师，与其他分析师协作。\n"
+                    "\n"
+                    "📋 **分析对象：**\n"
+                    "- 公司名称：{company_name}\n"
+                    "- 股票代码：{ticker}\n"
+                    "- 所属市场：{market_name}\n"
+                    "- 计价货币：{currency_name}（{currency_symbol}）\n"
+                    "- 分析日期：{current_date}\n"
+                    "\n"
+                    "🔧 **工具使用：**\n"
+                    "你可以使用以下工具：{tool_names}\n"
+                    "⚠️ 重要工作流程：\n"
+                    "1. 如果消息历史中没有工具结果，先调用 get_stock_data 工具获取股票数据\n"
+                    "   - ticker: {ticker}\n"
+                    "   - start_date: {current_date}\n"
+                    "   - end_date: {current_date}\n"
+                    "2. 然后调用 get_indicators 获取技术指标\n"
+                    "3. 如果消息历史中已经有工具结果（ToolMessage），立即基于工具数据生成最终分析报告\n"
+                    "4. 不要重复调用工具！\n"
+                    "5. 接收到工具数据后，必须立即生成完整的技术分析报告，不要再调用任何工具\n"
+                    "\n"
+                    "📝 **输出格式要求（必须严格遵守）：**\n"
+                    "\n"
+                    "## 📊 股票基本信息\n"
+                    "- 公司名称：{company_name}\n"
+                    "- 股票代码：{ticker}\n"
+                    "- 所属市场：{market_name}\n"
+                    "\n"
+                    "## 📈 技术指标分析\n"
+                    "[在这里分析移动平均线、MACD、RSI、布林带等技术指标，提供具体数值]\n"
+                    "\n"
+                    "## 📉 价格趋势分析\n"
+                    "[在这里分析价格趋势，考虑{market_name}市场特点]\n"
+                    "\n"
+                    "## 💭 投资建议\n"
+                    "[在这里给出明确的投资建议：买入/持有/卖出]\n"
+                    "\n"
+                    "⚠️ **重要提醒：**\n"
+                    "- 必须使用上述格式输出，不要自创标题格式\n"
+                    "- 所有价格数据使用{currency_name}（{currency_symbol}）表示\n"
+                    "- 确保在分析中正确使用公司名称\"{company_name}\"和股票代码\"{ticker}\"\n"
+                    "- 不要在标题中使用\"技术分析报告\"等自创标题\n"
+                    "- 如果你有明确的技术面投资建议（买入/持有/卖出），请在投资建议部分明确标注\n"
+                    "- 不要使用'最终交易建议'前缀，因为最终决策需要综合所有分析师的意见\n"
+                    "\n"
+                    "请使用中文，基于真实数据进行分析。",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
         )
 
-        prompt = prompt.partial(system_message=system_message)
-        prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
+        # Get tool names safely
+        tool_names = []
+        for tool in tools:
+            if hasattr(tool, 'name'):
+                tool_names.append(tool.name)
+            elif hasattr(tool, '__name__'):
+                tool_names.append(tool.__name__)
+            else:
+                tool_names.append(str(tool))
+
+        # Set all template variables
+        prompt = prompt.partial(tool_names=", ".join(tool_names))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(ticker=ticker)
+        prompt = prompt.partial(company_name=company_name)
+        prompt = prompt.partial(market_name=market_info['market_name'])
+        prompt = prompt.partial(currency_name=market_info['currency_name'])
+        prompt = prompt.partial(currency_symbol=market_info['currency_symbol'])
+
+        logger.info(f"[Market Analyst] LLM type: {llm.__class__.__name__}")
+        logger.info(f"[Market Analyst] LLM model: {getattr(llm, 'model_name', 'unknown')}")
+        logger.info(f"[Market Analyst] Message history count: {len(state['messages'])}")
+        logger.info(f"[Market Analyst] Company name: {company_name}")
+        logger.info(f"[Market Analyst] Ticker: {ticker}")
 
         chain = prompt | llm.bind_tools(tools)
 
-        result = chain.invoke(state["messages"])
+        logger.info(f"[Market Analyst] Starting LLM call...")
+        result = chain.invoke({"messages": state["messages"]})
+        logger.info(f"[Market Analyst] LLM call complete")
 
-        report = ""
+        # Log LLM response
+        logger.debug(f"[Market Analyst] Response type: {type(result).__name__}")
+        logger.debug(f"[Market Analyst] Response content: {str(result.content)[:500]}...")
+        if hasattr(result, 'tool_calls') and result.tool_calls:
+            logger.debug(f"[Market Analyst] Tool calls: {result.tool_calls}")
 
-        if len(result.tool_calls) == 0:
-            report = result.content
+        # Use Google tool call handler for Google models
+        if GoogleToolCallHandler.is_google_model(llm):
+            logger.info(f"[Market Analyst] Google model detected, using unified tool call handler")
 
-        return {
-            "messages": [result],
-            "market_report": report,
-        }
+            analysis_prompt_template = GoogleToolCallHandler.create_analysis_prompt(
+                ticker=ticker,
+                company_name=company_name,
+                analyst_type="市场分析",
+                specific_requirements="重点关注市场数据、价格走势、交易量变化等市场指标。"
+            )
+
+            report, messages = GoogleToolCallHandler.handle_google_tool_calls(
+                result=result,
+                llm=llm,
+                tools=tools,
+                state=state,
+                analysis_prompt_template=analysis_prompt_template,
+                analyst_name="市场分析师"
+            )
+
+            return {
+                "messages": [result],
+                "market_report": report,
+                "market_tool_call_count": tool_call_count + 1
+            }
+        else:
+            # Non-Google model processing
+            logger.info(f"[Market Analyst] Non-Google model ({llm.__class__.__name__}), using standard processing")
+
+            if len(result.tool_calls) == 0:
+                report = result.content
+                logger.info(f"[Market Analyst] Direct reply (no tool calls), length: {len(report)}")
+            else:
+                logger.info(f"[Market Analyst] Tool calls detected: {[call.get('name', 'unknown') for call in result.tool_calls]}")
+
+                try:
+                    from langchain_core.messages import ToolMessage, HumanMessage
+
+                    tool_messages = []
+                    for tool_call in result.tool_calls:
+                        tool_name = tool_call.get('name')
+                        tool_args = tool_call.get('args', {})
+                        tool_id = tool_call.get('id')
+
+                        logger.debug(f"Executing tool: {tool_name}, args: {tool_args}")
+
+                        tool_result = None
+                        for tool in tools:
+                            current_tool_name = None
+                            if hasattr(tool, 'name'):
+                                current_tool_name = tool.name
+                            elif hasattr(tool, '__name__'):
+                                current_tool_name = tool.__name__
+
+                            if current_tool_name == tool_name:
+                                try:
+                                    tool_result = tool.invoke(tool_args)
+                                    logger.debug(f"Tool execution success, result length: {len(str(tool_result))}")
+                                    break
+                                except Exception as tool_error:
+                                    logger.error(f"Tool execution failed: {tool_error}")
+                                    tool_result = f"Tool execution failed: {str(tool_error)}"
+
+                        if tool_result is None:
+                            tool_result = f"Tool not found: {tool_name}"
+
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_id
+                        )
+                        tool_messages.append(tool_message)
+
+                    analysis_prompt = f"""现在请基于上述工具获取的数据，生成详细的技术分析报告。
+
+**分析对象：**
+- 公司名称：{company_name}
+- 股票代码：{ticker}
+- 所属市场：{market_info['market_name']}
+- 计价货币：{market_info['currency_name']}（{market_info['currency_symbol']}）
+
+**输出格式要求（必须严格遵守）：**
+
+请按照以下专业格式输出报告，不要使用emoji符号（如📊📈📉💭等），使用纯文本标题：
+
+# **{company_name}（{ticker}）技术分析报告**
+**分析日期：[当前日期]**
+
+---
+
+## 一、股票基本信息
+
+- **公司名称**：{company_name}
+- **股票代码**：{ticker}
+- **所属市场**：{market_info['market_name']}
+- **当前价格**：[从工具数据中获取] {market_info['currency_symbol']}
+- **涨跌幅**：[从工具数据中获取]
+- **成交量**：[从工具数据中获取]
+
+---
+
+## 二、技术指标分析
+
+### 1. 移动平均线（MA）分析
+
+[分析MA5、MA10、MA20、MA60等均线系统，包括：]
+- 当前各均线数值
+- 均线排列形态（多头/空头）
+- 价格与均线的位置关系
+- 均线交叉信号
+
+### 2. MACD指标分析
+
+[分析MACD指标，包括：]
+- DIF、DEA、MACD柱状图当前数值
+- 金叉/死叉信号
+- 背离现象
+- 趋势强度判断
+
+### 3. RSI相对强弱指标
+
+[分析RSI指标，包括：]
+- RSI当前数值
+- 超买/超卖区域判断
+- 背离信号
+- 趋势确认
+
+### 4. 布林带（BOLL）分析
+
+[分析布林带指标，包括：]
+- 上轨、中轨、下轨数值
+- 价格在布林带中的位置
+- 带宽变化趋势
+- 突破信号
+
+---
+
+## 三、价格趋势分析
+
+### 1. 短期趋势（5-10个交易日）
+
+[分析短期价格走势，包括支撑位、压力位、关键价格区间]
+
+### 2. 中期趋势（20-60个交易日）
+
+[分析中期价格走势，结合均线系统判断趋势方向]
+
+### 3. 成交量分析
+
+[分析成交量变化，量价配合情况]
+
+---
+
+## 四、投资建议
+
+### 1. 综合评估
+
+[基于上述技术指标，给出综合评估]
+
+### 2. 操作建议
+
+- **投资评级**：买入/持有/卖出
+- **目标价位**：[给出具体价格区间] {market_info['currency_symbol']}
+- **止损位**：[给出止损价格] {market_info['currency_symbol']}
+- **风险提示**：[列出主要风险因素]
+
+### 3. 关键价格区间
+
+- **支撑位**：[具体价格]
+- **压力位**：[具体价格]
+- **突破买入价**：[具体价格]
+- **跌破卖出价**：[具体价格]
+
+---
+
+**重要提醒：**
+- 必须严格按照上述格式输出，使用标准的Markdown标题（#、##、###）
+- 不要使用emoji符号（📊📈📉💭等）
+- 所有价格数据使用{market_info['currency_name']}（{market_info['currency_symbol']}）表示
+- 确保在分析中正确使用公司名称"{company_name}"和股票代码"{ticker}"
+- 报告标题必须是：# **{company_name}（{ticker}）技术分析报告**
+- 报告必须基于工具返回的真实数据进行分析
+- 包含具体的技术指标数值和专业分析
+- 提供明确的投资建议和风险提示
+- 报告长度不少于800字
+- 使用中文撰写
+- 使用表格展示数据时，确保格式规范"""
+
+                    messages = state["messages"] + [result] + tool_messages + [HumanMessage(content=analysis_prompt)]
+
+                    final_result = llm.invoke(messages)
+                    report = final_result.content
+
+                    logger.info(f"[Market Analyst] Generated full analysis report, length: {len(report)}")
+
+                    return {
+                        "messages": [result] + tool_messages + [final_result],
+                        "market_report": report,
+                        "market_tool_call_count": tool_call_count + 1
+                    }
+
+                except Exception as e:
+                    logger.error(f"[Market Analyst] Tool execution or analysis generation failed: {e}")
+                    traceback.print_exc()
+
+                    report = f"Market analyst called tools but analysis generation failed: {[call.get('name', 'unknown') for call in result.tool_calls]}"
+
+                    return {
+                        "messages": [result],
+                        "market_report": report,
+                        "market_tool_call_count": tool_call_count + 1
+                    }
+
+            return {
+                "messages": [result],
+                "market_report": report,
+                "market_tool_call_count": tool_call_count + 1
+            }
 
     return market_analyst_node

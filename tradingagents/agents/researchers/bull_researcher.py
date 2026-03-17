@@ -1,11 +1,17 @@
 from langchain_core.messages import AIMessage
+import logging
 import time
 import json
-from tradingagents.agents.utils.cn_market_prompts import get_prompt_suffix
+
+from tradingagents.agents.utils.market_router import get_market_info, get_company_name
+
+logger = logging.getLogger(__name__)
 
 
 def create_bull_researcher(llm, memory):
     def bull_node(state) -> dict:
+        logger.debug("Bull researcher node started")
+
         investment_debate_state = state["investment_debate_state"]
         history = investment_debate_state.get("history", "")
         bull_history = investment_debate_state.get("bull_history", "")
@@ -16,47 +22,76 @@ def create_bull_researcher(llm, memory):
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
 
+        # 使用统一的股票类型检测
+        ticker = state.get('company_of_interest', 'Unknown')
+        market_info = get_market_info(ticker)
+        is_china = market_info['is_china']
+        is_hk = market_info['is_hk']
+        is_us = market_info['is_us']
+
+        # 获取公司名称
+        company_name = get_company_name(ticker, market_info['market'])
+
+        currency = market_info['currency']
+        currency_symbol = market_info['currency_symbol']
+
+        logger.debug(f"Reports received - market: {len(market_research_report)}, sentiment: {len(sentiment_report)}, news: {len(news_report)}, fundamentals: {len(fundamentals_report)}")
+        logger.debug(f"Ticker: {ticker}, company: {company_name}, market: {market_info['market_name']}, currency: {currency}")
+
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
-        past_memories = memory.get_memories(curr_situation, n_matches=2)
+
+        # 安全检查：确保memory不为None
+        if memory is not None:
+            past_memories = memory.get_memories(curr_situation, n_matches=2)
+        else:
+            logger.warning("memory is None, skipping memory retrieval")
+            past_memories = []
 
         past_memory_str = ""
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are a Bull Analyst advocating for investing in the stock. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively.
+        prompt = f"""你是一位看涨分析师，负责为股票 {company_name}（股票代码：{ticker}）的投资建立强有力的论证。
 
-Key points to focus on:
-- Growth Potential: Highlight the company's market opportunities, revenue projections, and scalability.
-- Competitive Advantages: Emphasize factors like unique products, strong branding, or dominant market positioning.
-- Positive Indicators: Use financial health, industry trends, and recent positive news as evidence.
-- Bear Counterpoints: Critically analyze the bear argument with specific data and sound reasoning, addressing concerns thoroughly and showing why the bull perspective holds stronger merit.
-- Engagement: Present your argument in a conversational style, engaging directly with the bear analyst's points and debating effectively rather than just listing data.
+⚠️ 重要提醒：当前分析的是 {'中国A股' if is_china else '海外股票'}，所有价格和估值请使用 {currency}（{currency_symbol}）作为单位。
+⚠️ 在你的分析中，请始终使用公司名称"{company_name}"而不是股票代码"{ticker}"来称呼这家公司。
 
-Resources available:
-Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bear argument: {current_response}
-Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position. You must also address reflections and learn from lessons and mistakes you made in the past.
+你的任务是构建基于证据的强有力案例，强调增长潜力、竞争优势和积极的市场指标。利用提供的研究和数据来解决担忧并有效反驳看跌论点。
+
+请用中文回答，重点关注以下几个方面：
+- 增长潜力：突出公司的市场机会、收入预测和可扩展性
+- 竞争优势：强调独特产品、强势品牌或主导市场地位等因素
+- 积极指标：使用财务健康状况、行业趋势和最新积极消息作为证据
+- 反驳看跌观点：用具体数据和合理推理批判性分析看跌论点，全面解决担忧并说明为什么看涨观点更有说服力
+- 参与讨论：以对话风格呈现你的论点，直接回应看跌分析师的观点并进行有效辩论，而不仅仅是列举数据
+
+可用资源：
+市场研究报告：{market_research_report}
+社交媒体情绪报告：{sentiment_report}
+最新世界事务新闻：{news_report}
+公司基本面报告：{fundamentals_report}
+辩论对话历史：{history}
+最后的看跌论点：{current_response}
+类似情况的反思和经验教训：{past_memory_str}
+
+请使用这些信息提供令人信服的看涨论点，反驳看跌担忧，并参与动态辩论，展示看涨立场的优势。你还必须处理反思并从过去的经验教训和错误中学习。
+
+请确保所有回答都使用中文。
 """
-
-        # Append CN market suffix if analyzing A-share
-        market_ctx = state.get("market_context", {})
-        prompt += get_prompt_suffix(market_ctx.get("market", "us"), "researcher")
 
         response = llm.invoke(prompt)
 
         argument = f"Bull Analyst: {response.content}"
+
+        new_count = investment_debate_state["count"] + 1
+        logger.info(f"Bull researcher completed, count: {investment_debate_state['count']} -> {new_count}")
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,
             "bull_history": bull_history + "\n" + argument,
             "bear_history": investment_debate_state.get("bear_history", ""),
             "current_response": argument,
-            "count": investment_debate_state["count"] + 1,
+            "count": new_count,
         }
 
         return {"investment_debate_state": new_investment_debate_state}

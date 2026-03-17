@@ -52,10 +52,40 @@ from .tushare_stock import (
 )
 
 # Market detection
-from .market_utils import detect_market, normalize_symbol
+from .market_utils import detect_market, normalize_symbol, normalize_hk_symbol
 
 # Configuration and routing logic
 from .config import get_config, get_market_context
+
+# BaoStock vendor imports (optional, requires baostock package)
+try:
+    from .baostock_stock import (
+        get_stock_data as get_baostock_stock,
+        get_indicators as get_baostock_indicators,
+        get_fundamentals as get_baostock_fundamentals,
+        get_balance_sheet as get_baostock_balance_sheet,
+        get_cashflow as get_baostock_cashflow,
+        get_income_statement as get_baostock_income_statement,
+        get_insider_transactions as get_baostock_insider_transactions,
+    )
+    _BAOSTOCK_AVAILABLE = True
+except ImportError:
+    _BAOSTOCK_AVAILABLE = False
+
+# HK stock vendor imports
+try:
+    from .hk_stock import (
+        get_stock_data as get_hk_stock,
+        get_indicators as get_hk_indicators,
+        get_fundamentals as get_hk_fundamentals,
+        get_balance_sheet as get_hk_balance_sheet,
+        get_cashflow as get_hk_cashflow,
+        get_income_statement as get_hk_income_statement,
+        get_insider_transactions as get_hk_insider_transactions,
+    )
+    _HK_AVAILABLE = True
+except ImportError:
+    _HK_AVAILABLE = False
 
 # Methods where the first argument is NOT a stock symbol
 _NON_SYMBOL_METHODS = {"get_global_news"}
@@ -98,6 +128,8 @@ VENDOR_LIST = [
     "alpha_vantage",
     "akshare",
     "tushare",
+    "baostock",
+    "hk",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -108,6 +140,8 @@ VENDOR_METHODS = {
         "yfinance": get_YFin_data_online,
         "akshare": get_akshare_stock,
         "tushare": get_tushare_stock,
+        **({"baostock": get_baostock_stock} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_stock} if _HK_AVAILABLE else {}),
     },
     # technical_indicators
     "get_indicators": {
@@ -115,6 +149,8 @@ VENDOR_METHODS = {
         "yfinance": get_stock_stats_indicators_window,
         "akshare": get_akshare_indicators,
         "tushare": get_tushare_indicators,
+        **({"baostock": get_baostock_indicators} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_indicators} if _HK_AVAILABLE else {}),
     },
     # fundamental_data
     "get_fundamentals": {
@@ -122,24 +158,32 @@ VENDOR_METHODS = {
         "yfinance": get_yfinance_fundamentals,
         "akshare": get_akshare_fundamentals,
         "tushare": get_tushare_fundamentals,
+        **({"baostock": get_baostock_fundamentals} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_fundamentals} if _HK_AVAILABLE else {}),
     },
     "get_balance_sheet": {
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
         "akshare": get_akshare_balance_sheet,
         "tushare": get_tushare_balance_sheet,
+        **({"baostock": get_baostock_balance_sheet} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_balance_sheet} if _HK_AVAILABLE else {}),
     },
     "get_cashflow": {
         "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
         "akshare": get_akshare_cashflow,
         "tushare": get_tushare_cashflow,
+        **({"baostock": get_baostock_cashflow} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_cashflow} if _HK_AVAILABLE else {}),
     },
     "get_income_statement": {
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
         "akshare": get_akshare_income_statement,
         "tushare": get_tushare_income_statement,
+        **({"baostock": get_baostock_income_statement} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_income_statement} if _HK_AVAILABLE else {}),
     },
     # news_data
     "get_news": {
@@ -157,6 +201,8 @@ VENDOR_METHODS = {
         "yfinance": get_yfinance_insider_transactions,
         "akshare": get_akshare_insider_transactions,
         "tushare": get_tushare_insider_transactions,
+        **({"baostock": get_baostock_insider_transactions} if _BAOSTOCK_AVAILABLE else {}),
+        **({"hk": get_hk_insider_transactions} if _HK_AVAILABLE else {}),
     },
 }
 
@@ -197,6 +243,22 @@ def get_vendor_cn(category: str, method: str = None) -> str:
     # Fall back to CN category-level configuration
     return config.get("cn_data_vendors", {}).get(category, "tushare")
 
+
+def get_vendor_hk(category: str, method: str = None) -> str:
+    """Get the configured vendor for HK market data category or specific tool method.
+    Tool-level configuration takes precedence over category-level.
+    """
+    config = get_config()
+
+    # Check HK tool-level configuration first
+    if method:
+        hk_tool_vendors = config.get("hk_tool_vendors", {})
+        if method in hk_tool_vendors:
+            return hk_tool_vendors[method]
+
+    # Fall back to HK category-level configuration
+    return config.get("hk_data_vendors", {}).get(category, "yfinance")
+
 def _detect_market_for_route(method: str, args, kwargs) -> str:
     """Detect market from the method call arguments."""
     if method in _NON_SYMBOL_METHODS:
@@ -224,6 +286,8 @@ def route_to_vendor(method: str, *args, **kwargs):
     category = get_category_for_method(method)
     if market == "cn":
         vendor_config = get_vendor_cn(category, method)
+    elif market == "hk":
+        vendor_config = get_vendor_hk(category, method)
     else:
         vendor_config = get_vendor(category, method)
 
@@ -235,15 +299,21 @@ def route_to_vendor(method: str, *args, **kwargs):
     # Normalize symbol for the target vendor
     if method not in _NON_SYMBOL_METHODS and args:
         symbol = str(args[0])
-        normalized = normalize_symbol(symbol, market)
+        if market == "hk":
+            normalized = normalize_hk_symbol(symbol)
+        else:
+            normalized = normalize_symbol(symbol, market)
         args = (normalized,) + args[1:]
 
     # Build fallback chain: primary vendors first, then remaining available vendors
-    # For CN market, only include CN-compatible vendors in fallback
+    # For each market, only include compatible vendors in fallback
     all_available_vendors = list(VENDOR_METHODS[method].keys())
     if market == "cn":
-        cn_vendors = ["tushare", "akshare"]
+        cn_vendors = ["tushare", "akshare", "baostock"]
         all_available_vendors = [v for v in all_available_vendors if v in cn_vendors]
+    elif market == "hk":
+        hk_vendors = ["hk", "yfinance"]
+        all_available_vendors = [v for v in all_available_vendors if v in hk_vendors]
     else:
         us_vendors = ["yfinance", "alpha_vantage"]
         all_available_vendors = [v for v in all_available_vendors if v in us_vendors]
@@ -267,8 +337,8 @@ def route_to_vendor(method: str, *args, **kwargs):
             continue  # Rate limits trigger fallback
         except Exception as e:
             last_error = e
-            # For CN vendors, any exception triggers fallback to next CN vendor
-            if market == "cn":
+            # For CN/HK vendors, any exception triggers fallback to next vendor
+            if market in ("cn", "hk"):
                 continue
             raise
 

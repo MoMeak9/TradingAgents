@@ -54,6 +54,12 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            "china_market_report": "",
+            "market_tool_call_count": 0,
+            "sentiment_tool_call_count": 0,
+            "news_tool_call_count": 0,
+            "fundamentals_tool_call_count": 0,
+            "china_market_tool_call_count": 0,
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

@@ -21,18 +21,23 @@ from tradingagents.agents.utils.agent_states import (
 from tradingagents.dataflows.config import set_config, set_market_context
 from tradingagents.dataflows.market_utils import detect_market
 
-# Import the new abstract tool methods from agent_utils
-from tradingagents.agents.utils.agent_utils import (
-    get_stock_data,
-    get_indicators,
+# Import the tool methods from modular tool files
+from tradingagents.agents.utils.core_stock_tools import get_stock_data
+from tradingagents.agents.utils.technical_indicators_tools import get_indicators
+from tradingagents.agents.utils.fundamental_data_tools import (
     get_fundamentals,
     get_balance_sheet,
     get_cashflow,
     get_income_statement,
+)
+from tradingagents.agents.utils.news_data_tools import (
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
 )
+
+# Market router for toolkit
+from tradingagents.agents.utils.market_router import get_market_info as _get_market_info
 
 from .conditional_logic import ConditionalLogic
 from .setup import GraphSetup
@@ -119,6 +124,7 @@ class TradingAgentsGraph:
             memories["invest_judge"],
             memories["risk_manager"],
             self.conditional_logic,
+            toolkit=None,  # Market routing handled by market_router module
         )
 
         self.propagator = Propagator(max_recur_limit=self.config.get("max_recur_limit", 100))
@@ -185,6 +191,14 @@ class TradingAgentsGraph:
                     get_income_statement,
                 ]
             ),
+            "china_market": ToolNode(
+                [
+                    # China market analyst uses core tools (routed by interface)
+                    get_stock_data,
+                    get_indicators,
+                    get_fundamentals,
+                ]
+            ),
         }
 
     def _get_memories(self, market: str) -> dict:
@@ -216,6 +230,7 @@ class TradingAgentsGraph:
             memories["invest_judge"],
             memories["risk_manager"],
             self.conditional_logic,
+            toolkit=None,
         )
         self.graph = self.graph_setup.setup_graph(self._selected_analysts)
 
@@ -275,6 +290,7 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            "china_market_report": final_state.get("china_market_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],
@@ -329,5 +345,8 @@ class TradingAgentsGraph:
         )
 
     def process_signal(self, full_signal):
-        """Process a signal to extract the core decision."""
-        return self.signal_processor.process_signal(full_signal)
+        """Process a signal to extract the core decision.
+
+        Returns a dict: {action, target_price, confidence, risk_score, reasoning}
+        """
+        return self.signal_processor.process_signal(full_signal, self.ticker)

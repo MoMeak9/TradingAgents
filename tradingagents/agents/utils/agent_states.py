@@ -61,6 +61,14 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    china_market_report: Annotated[str, "Report from the China Market Analyst"]
+
+    # Tool call counters (death-loop prevention)
+    market_tool_call_count: Annotated[int, "Number of tool calls by Market Analyst"]
+    sentiment_tool_call_count: Annotated[int, "Number of tool calls by Social Media Analyst"]
+    news_tool_call_count: Annotated[int, "Number of tool calls by News Analyst"]
+    fundamentals_tool_call_count: Annotated[int, "Number of tool calls by Fundamentals Analyst"]
+    china_market_tool_call_count: Annotated[int, "Number of tool calls by China Market Analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

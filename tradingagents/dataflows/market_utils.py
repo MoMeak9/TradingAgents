@@ -13,17 +13,22 @@ def detect_market(symbol: str) -> str:
     Detect market from stock symbol.
 
     Rules:
+      - .HK suffix (0700.HK) → "hk"
       - Pure letters (NVDA, AAPL) → "us"
       - 6-digit numbers (600519, 000858) → "cn"
       - With suffix (000858.SZ, 600519.SH) → "cn"
       - With prefix (SZ000858, SH600519) → "cn"
 
-    Returns: "us" | "cn"
+    Returns: "us" | "cn" | "hk"
     """
     if not symbol or not symbol.strip():
         return "us"
 
     s = symbol.strip()
+
+    # Check for .HK suffix (Hong Kong)
+    if re.match(r"^\d{1,5}\.HK$", s, re.IGNORECASE):
+        return "hk"
 
     # Check for .SH / .SZ suffix
     if re.match(r"^\d{6}\.(SH|SZ)$", s, re.IGNORECASE):
@@ -88,14 +93,31 @@ def get_exchange(symbol: str) -> str:
     return "SZ"
 
 
+def normalize_hk_symbol(symbol: str) -> str:
+    """
+    Normalize HK stock symbol to XXXX.HK format.
+
+    Examples: 700 → 0700.HK, 00700 → 0700.HK, 0700.HK → 0700.HK
+    """
+    if not symbol:
+        return symbol
+    s = str(symbol).strip().upper()
+    if s.endswith(".HK"):
+        s = s[:-3]
+    if s.isdigit():
+        clean = s.lstrip("0") or "0"
+        return f"{clean.zfill(4)}.HK"
+    return s
+
+
 def get_market_info(symbol: str) -> dict:
     """
     Return market metadata for a given symbol.
 
     Returns: {
-        "market": "cn" | "us",
-        "exchange": "SH" | "SZ" | "",
-        "currency": "CNY" | "USD",
+        "market": "cn" | "us" | "hk",
+        "exchange": "SH" | "SZ" | "HKG" | "",
+        "currency": "CNY" | "USD" | "HKD",
         "language": "zh" | "en",
         "symbol_normalized": str,
         "symbol_display": str,
@@ -113,6 +135,17 @@ def get_market_info(symbol: str) -> dict:
             "language": "zh",
             "symbol_normalized": normalized,
             "symbol_display": f"{normalized}.{exchange}",
+        }
+
+    if market == "hk":
+        normalized = normalize_hk_symbol(symbol)
+        return {
+            "market": "hk",
+            "exchange": "HKG",
+            "currency": "HKD",
+            "language": "zh",
+            "symbol_normalized": normalized,
+            "symbol_display": normalized,
         }
 
     normalized = normalize_symbol(symbol, "us")
