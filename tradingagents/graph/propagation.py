@@ -1,6 +1,7 @@
 # TradingAgents/graph/propagation.py
 
 from typing import Dict, Any, List, Optional
+from langchain_core.messages import HumanMessage
 from tradingagents.agents.utils.agent_states import (
     AgentState,
     InvestDebateState,
@@ -21,8 +22,14 @@ class Propagator:
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         market_context = get_market_info(company_name)
+        analysis_request = (
+            f"请对股票 {company_name} 进行全面分析，"
+            f"包括技术面、基本面、新闻面和情绪面，"
+            f"最终给出买入/持有/卖出建议。"
+            f"分析日期：{trade_date}。"
+        )
         return {
-            "messages": [("human", company_name)],
+            "messages": [HumanMessage(content=analysis_request)],
             "company_of_interest": company_name,
             "trade_date": str(trade_date),
             "market_context": market_context,

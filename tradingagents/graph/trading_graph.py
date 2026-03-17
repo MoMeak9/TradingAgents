@@ -34,6 +34,7 @@ from tradingagents.agents.utils.news_data_tools import (
     get_news,
     get_insider_transactions,
     get_global_news,
+    get_sentiment,
 )
 
 # Market router for toolkit
@@ -170,8 +171,8 @@ class TradingAgentsGraph:
             ),
             "social": ToolNode(
                 [
-                    # News tools for social media analysis
-                    get_news,
+                    # Dedicated sentiment analysis tool
+                    get_sentiment,
                 ]
             ),
             "news": ToolNode(
@@ -278,8 +279,14 @@ class TradingAgentsGraph:
         # Log state
         self._log_state(trade_date, final_state)
 
+        # Process signal
+        decision = self.process_signal(final_state["final_trade_decision"])
+
+        # Generate markdown report
+        self._generate_report(trade_date, final_state, decision)
+
         # Return decision and processed signal
-        return final_state, self.process_signal(final_state["final_trade_decision"])
+        return final_state, decision
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
@@ -350,3 +357,134 @@ class TradingAgentsGraph:
         Returns a dict: {action, target_price, confidence, risk_score, reasoning}
         """
         return self.signal_processor.process_signal(full_signal, self.ticker)
+
+    def _generate_report(self, trade_date, final_state, decision):
+        """Generate a markdown analysis report in docs/reports/.
+
+        Each execution produces one .md file containing all agent outputs.
+        """
+        from datetime import datetime as _dt
+
+        ticker = final_state["company_of_interest"]
+        report_dir = Path(
+            os.path.join(self.config.get("project_dir", "."), "docs", "reports")
+        )
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{ticker}_{trade_date}_report.md"
+        filepath = report_dir / filename
+
+        # Build report sections
+        lines = [
+            f"# 股票分析报告 — {ticker}",
+            f"",
+            f"- **分析日期**: {trade_date}",
+            f"- **生成时间**: {_dt.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"",
+            f"---",
+            f"",
+            f"## 决策摘要",
+            f"",
+            f"| 项目 | 结果 |",
+            f"|------|------|",
+            f"| 操作建议 | {decision.get('action', 'N/A')} |",
+            f"| 目标价 | {decision.get('target_price', 'N/A')} |",
+            f"| 置信度 | {decision.get('confidence', 'N/A')} |",
+            f"| 风险评分 | {decision.get('risk_score', 'N/A')} |",
+            f"",
+            f"**决策理由**: {decision.get('reasoning', 'N/A')}",
+            f"",
+            f"---",
+            f"",
+        ]
+
+        # Phase 1: Analyst Reports
+        report_sections = [
+            ("市场分析报告", "market_report"),
+            ("基本面分析报告", "fundamentals_report"),
+            ("新闻分析报告", "news_report"),
+            ("社交情绪分析报告", "sentiment_report"),
+            ("中国市场分析报告", "china_market_report"),
+        ]
+        for title, key in report_sections:
+            content = final_state.get(key, "")
+            if content and len(content.strip()) > 0:
+                lines.append(f"## {title}")
+                lines.append("")
+                lines.append(content.strip())
+                lines.append("")
+                lines.append("---")
+                lines.append("")
+
+        # Phase 2: Investment Debate
+        debate = final_state.get("investment_debate_state", {})
+        if debate:
+            lines.append("## 投资辩论")
+            lines.append("")
+            bull = debate.get("bull_history", "")
+            if bull:
+                lines.append("### 看涨研究员")
+                lines.append("")
+                lines.append(bull.strip())
+                lines.append("")
+            bear = debate.get("bear_history", "")
+            if bear:
+                lines.append("### 看跌研究员")
+                lines.append("")
+                lines.append(bear.strip())
+                lines.append("")
+            judge = debate.get("judge_decision", "")
+            if judge:
+                lines.append("### 研究经理决策")
+                lines.append("")
+                lines.append(judge.strip())
+                lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        # Phase 2.5: Trader Plan
+        trader_plan = final_state.get("trader_investment_plan", "")
+        if trader_plan:
+            lines.append("## 交易员投资计划")
+            lines.append("")
+            lines.append(trader_plan.strip())
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        # Phase 3: Risk Debate
+        risk = final_state.get("risk_debate_state", {})
+        if risk:
+            lines.append("## 风险辩论")
+            lines.append("")
+            for role, key in [
+                ("激进风控分析师", "aggressive_history"),
+                ("保守风控分析师", "conservative_history"),
+                ("中性风控分析师", "neutral_history"),
+            ]:
+                content = risk.get(key, "")
+                if content:
+                    lines.append(f"### {role}")
+                    lines.append("")
+                    lines.append(content.strip())
+                    lines.append("")
+            risk_judge = risk.get("judge_decision", "")
+            if risk_judge:
+                lines.append("### 风险经理最终决策")
+                lines.append("")
+                lines.append(risk_judge.strip())
+                lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        # Final Decision
+        final_decision = final_state.get("final_trade_decision", "")
+        if final_decision:
+            lines.append("## 最终交易决策")
+            lines.append("")
+            lines.append(final_decision.strip())
+            lines.append("")
+
+        # Write file
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))

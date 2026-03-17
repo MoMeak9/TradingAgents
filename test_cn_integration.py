@@ -10,9 +10,9 @@ load_dotenv()
 # 配置使用 minimax provider（有可用的 API key）
 config = DEFAULT_CONFIG.copy()
 config["llm_provider"] = "minimax"
-config["deep_think_llm"] = "MiniMax-Text-01"
-config["quick_think_llm"] = "MiniMax-Text-01"
-config["backend_url"] = "https://api.minimax.chat/v1"
+config["deep_think_llm"] = "MiniMax-M2.5"
+config["quick_think_llm"] = "MiniMax-M2.5"
+config["backend_url"] = "https://api.minimaxi.com/v1"
 config["max_debate_rounds"] = 1
 config["max_risk_discuss_rounds"] = 1
 
@@ -46,7 +46,7 @@ print()
 print("开始分析 000001（平安银行）...")
 print("-" * 60)
 
-final_state, decision = ta.propagate("000001", "2024-12-20")
+final_state, decision = ta.propagate("000001", "2025-03-17")
 
 print()
 print("=" * 60)

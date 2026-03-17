@@ -19,7 +19,7 @@ from tradingagents.agents.utils.market_router import (
 )
 
 # Import tool functions
-from tradingagents.agents.utils.news_data_tools import get_news
+from tradingagents.agents.utils.news_data_tools import get_sentiment
 
 
 def create_social_media_analyst(llm, toolkit=None):
@@ -39,9 +39,9 @@ def create_social_media_analyst(llm, toolkit=None):
         company_name = get_company_name(ticker)
         logger.info(f"[Social Media Analyst] Company name: {company_name}")
 
-        # Use news_data_tools for sentiment/social media analysis
-        logger.info(f"[Social Media Analyst] Using news data tools for sentiment analysis")
-        tools = [get_news]
+        # Use dedicated sentiment tool for social media analysis
+        logger.info(f"[Social Media Analyst] Using dedicated sentiment analysis tool")
+        tools = [get_sentiment]
 
         system_message = (
             """您是一位专业的中国市场社交媒体和投资情绪分析师，负责分析中国投资者对特定股票的讨论和情绪变化。

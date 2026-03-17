@@ -1,6 +1,7 @@
 from langchain_core.tools import tool
 from typing import Annotated
 from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.dataflows.market_utils import detect_market
 
 @tool
 def get_news(
@@ -51,3 +52,27 @@ def get_insider_transactions(
         str: A report of insider transaction data
     """
     return route_to_vendor("get_insider_transactions", ticker)
+
+@tool
+def get_sentiment(
+    ticker: Annotated[str, "Stock code, e.g. 000001, 600519"],
+    curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+    look_back_days: Annotated[int, "Number of days to look back"] = 7,
+) -> str:
+    """
+    Retrieve social media sentiment data for a stock.
+    For A-share stocks, fetches data from Eastmoney Guba, analyst ratings, and capital flow.
+    For other markets, falls back to news-based sentiment.
+    Args:
+        ticker (str): Stock code (e.g. 000001, 600519, AAPL)
+        curr_date (str): Current date in yyyy-mm-dd format
+        look_back_days (int): Number of days to look back (default 7)
+    Returns:
+        str: A formatted report containing social sentiment data
+    """
+    market = detect_market(ticker)
+    if market == "cn":
+        from tradingagents.dataflows.akshare_sentiment import get_stock_sentiment
+        return get_stock_sentiment(ticker, curr_date, look_back_days)
+    # For non-CN markets, fall back to news
+    return route_to_vendor("get_news", ticker, curr_date, curr_date)

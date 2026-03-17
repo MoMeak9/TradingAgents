@@ -335,8 +335,18 @@ def create_fundamentals_analyst(llm, toolkit=None):
                     if fundamentals_tool:
                         combined_data = fundamentals_tool.invoke({
                             'ticker': ticker,
-                            'curr_date': current_date
+                            'curr_date': current_date,
                         })
+                        # Also fetch balance sheet for richer data
+                        for tool in tools:
+                            t_name = getattr(tool, 'name', None) or getattr(tool, '__name__', None)
+                            if t_name == 'get_balance_sheet':
+                                try:
+                                    bs_data = tool.invoke({'ticker': ticker, 'freq': 'quarterly', 'curr_date': current_date})
+                                    combined_data += "\n\n" + str(bs_data)
+                                except Exception:
+                                    pass
+                                break
                         logger.info(f"[Forced call] Tool call success, data length: {len(str(combined_data))} chars")
                     else:
                         combined_data = "Fundamentals tool not available"
