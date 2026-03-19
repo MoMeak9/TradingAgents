@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2026-03-19",
+    "status": "success",
+    "decision": {
+      "action": "买入",
+      "target_price": 11.3,
+      "confidence": 0.88,
+      "risk_score": 0.42,
+      "reasoning": "技术修复信号成组出现，价格站上MA10和MA20，MACD金叉转正，RSI回升且量价结构健康；同时10.80止损位明确、11.08至11.10为验证位，适合分步建仓、突破后加仓的纪律化买入。"
+    },
+    "elapsed": 729.3,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3955,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3798
+    }
+  }
+]

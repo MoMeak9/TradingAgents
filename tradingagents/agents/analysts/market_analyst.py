@@ -3,6 +3,7 @@ import logging
 import time
 import json
 import traceback
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,9 @@ def create_market_analyst(llm, toolkit=None):
                     "⚠️ 重要工作流程：\n"
                     "1. 如果消息历史中没有工具结果，先调用 get_stock_data 工具获取股票数据\n"
                     "   - ticker: {ticker}\n"
-                    "   - start_date: {current_date}\n"
+                    "   - start_date: {start_date_60d}\n"
                     "   - end_date: {current_date}\n"
+                    "   注意：必须获取足够的历史数据（至少60个交易日）来计算MA、MACD、RSI等技术指标\n"
                     "2. 然后调用 get_indicators 获取技术指标\n"
                     "3. 如果消息历史中已经有工具结果（ToolMessage），立即基于工具数据生成最终分析报告\n"
                     "4. 不要重复调用工具！\n"
@@ -134,6 +136,14 @@ def create_market_analyst(llm, toolkit=None):
         # Set all template variables
         prompt = prompt.partial(tool_names=", ".join(tool_names))
         prompt = prompt.partial(current_date=current_date)
+        # Calculate start date 60 trading days back (~90 calendar days) for technical analysis
+        from datetime import timedelta
+        try:
+            _cd = datetime.strptime(current_date, "%Y-%m-%d")
+            start_date_60d = (_cd - timedelta(days=90)).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            start_date_60d = current_date
+        prompt = prompt.partial(start_date_60d=start_date_60d)
         prompt = prompt.partial(ticker=ticker)
         prompt = prompt.partial(company_name=company_name)
         prompt = prompt.partial(market_name=market_info['market_name'])

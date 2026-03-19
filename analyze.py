@@ -590,6 +590,35 @@ def _make_stock_progress() -> Progress:
     )
 
 
+def _warn_if_market_open(trade_date: str, tickers: list):
+    """Warn user if analyzing A-share tickers while market data may be incomplete.
+
+    tushare/akshare daily data is only available after market close (~16:00 CST).
+    Running analysis during trading hours will result in missing current-day data.
+    """
+    from tradingagents.dataflows.market_utils import detect_market
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    if trade_date != today_str:
+        return
+
+    has_cn = any(detect_market(t) == "cn" for t in tickers)
+    if not has_cn:
+        return
+
+    now_hour = datetime.now().hour
+    if now_hour < 16:
+        console.print(
+            Panel(
+                "[yellow]检测到分析日期为今天，且包含A股标的。\n"
+                "A股日线数据通常在收盘后（~16:00）才发布。\n"
+                "当前时间早于 16:00，今日行情数据可能尚未生成，系统将自动使用最近交易日的数据。[/yellow]",
+                title="[bold yellow]⚠ 盘中数据提醒[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+
+
 # ─── 主入口 ──────────────────────────────────────────────────────
 def main(argv: Optional[List[str]] = None):
     args = parse_args(argv)
@@ -600,6 +629,9 @@ def main(argv: Optional[List[str]] = None):
     print_header(args, intensity)
 
     tickers = args.tickers
+
+    # ── 盘中运行警告 ──
+    _warn_if_market_open(args.date, tickers)
     results: List[Dict[str, Any]] = []
     batch_t0 = time.time()
     total_steps_per_stock = _calc_total_steps(analysts, config)

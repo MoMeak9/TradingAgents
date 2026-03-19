@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2026-03-18",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 9.4,
+      "confidence": 0.9,
+      "risk_score": 0.8,
+      "reasoning": "报告明确给出卖出结论，核心依据是当前缺乏可验证的基本面修复证据，银行股更可能面临长期横盘、资金效率下降和机会成本上升。相较基于预期的多头逻辑，作者更强调纪律与证据边界，因此建议分批减仓退出。"
+    },
+    "elapsed": 554.6,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3296,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3211
+    }
+  }
+]
