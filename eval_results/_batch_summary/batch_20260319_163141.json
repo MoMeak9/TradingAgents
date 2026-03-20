@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "600388",
+    "date": "2026-03-19",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 18.6,
+      "confidence": 0.9,
+      "risk_score": 0.8,
+      "reasoning": "技术结构已明显转弱，均线、MACD、RSI、布林及量价共振偏空，17.50支撑尚未确认且17.30失守后或下探17.00至16.80。当前多头依据仅是可能反抽，未见止跌与反转信号，宜减仓或清仓，等待放量修复后再评估。"
+    },
+    "elapsed": 661.4,
+    "stats": {
+      "llm_calls": 11,
+      "tool_calls": 4,
+      "tokens_in": 77243,
+      "tokens_out": 25166
+    },
+    "report_lens": {
+      "market_report": 3911,
+      "fundamentals_report": 0,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3852
+    }
+  }
+]

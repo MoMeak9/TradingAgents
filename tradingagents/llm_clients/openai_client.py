@@ -80,6 +80,11 @@ class OpenAIClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
+        # When streaming is enabled, also request usage metadata so that
+        # token counts are included in the streamed response.
+        if llm_kwargs.get("streaming"):
+            llm_kwargs["stream_usage"] = True
+
         return UnifiedChatOpenAI(**llm_kwargs)
 
     def _set_api_key(self, llm_kwargs: dict) -> None:
