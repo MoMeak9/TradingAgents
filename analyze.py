@@ -31,7 +31,7 @@ import time
 import threading
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -139,6 +139,60 @@ def build_config(args: argparse.Namespace, intensity: dict) -> Dict[str, Any]:
         }
 
     return config
+
+
+def _was_date_explicitly_set(argv: List[str]) -> bool:
+    """Return whether the user explicitly passed -d/--date."""
+    for token in argv:
+        if token in {"-d", "--date"} or token.startswith("--date="):
+            return True
+    return False
+
+
+def _previous_weekday(date_str: str) -> str:
+    """Roll back weekends to the previous weekday."""
+    current = datetime.strptime(date_str, "%Y-%m-%d").date()
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current.strftime("%Y-%m-%d")
+
+
+def _resolve_cn_trade_date(date_str: str) -> str:
+    """Resolve an A-share analysis date to the latest available trade date."""
+    from tradingagents.dataflows.market_utils import get_cn_trade_dates
+
+    current = datetime.strptime(date_str, "%Y-%m-%d").date()
+    start = (current - timedelta(days=31)).strftime("%Y-%m-%d")
+    end = current.strftime("%Y-%m-%d")
+
+    try:
+        trade_dates = get_cn_trade_dates(start, end)
+    except Exception:
+        return _previous_weekday(date_str)
+
+    if not trade_dates:
+        return _previous_weekday(date_str)
+
+    return trade_dates[-1]
+
+
+def resolve_analysis_date(
+    tickers: List[str],
+    requested_date: str,
+    date_was_explicit: bool,
+) -> Tuple[str, str]:
+    """Resolve the effective analysis date for the current batch."""
+    original_date = requested_date
+    if date_was_explicit:
+        return original_date, requested_date
+
+    from tradingagents.dataflows.market_utils import detect_market
+
+    markets = {detect_market(ticker) for ticker in tickers}
+    if markets == {"cn"}:
+        return original_date, _resolve_cn_trade_date(requested_date)
+
+    return original_date, _previous_weekday(requested_date)
 
 
 def _log(msg: str, ticker: str = "", style: str = ""):
@@ -328,10 +382,11 @@ def print_header(args: argparse.Namespace, intensity: dict):
     """用 Rich Panel 打印分析任务头部信息。"""
     level_colors = {1: "cyan", 2: "green", 3: "yellow", 4: "magenta", 5: "red"}
     lv_color = level_colors.get(args.level, "white")
+    original_date = getattr(args, "original_date", args.date)
 
     info_lines = [
         f"[bold]股票列表[/bold]  : [cyan]{', '.join(args.tickers)}[/cyan]",
-        f"[bold]分析日期[/bold]  : {args.date}",
+        f"[bold]分析日期[/bold]  : {original_date} -> {args.date}",
         f"[bold]分析强度[/bold]  : [{lv_color}]Lv.{args.level} {intensity['name']} — {intensity['desc']}[/{lv_color}]",
         f"[bold]分析师团队[/bold]: {', '.join(intensity['analysts'])}",
         f"[bold]辩论轮数[/bold]  : {intensity['max_debate_rounds']}   [bold]风控轮数[/bold]: {intensity['max_risk_discuss_rounds']}",
@@ -477,6 +532,7 @@ def print_summary(results: List[Dict[str, Any]]):
 
 # ─── CLI 定义 ────────────────────────────────────────────────────
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         prog="analyze",
         description="TradingAgents 多股票并行分析工具",
@@ -558,7 +614,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="开启调试模式（打印详细 LLM 交互日志）",
     )
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
+    args.date_was_explicit = _was_date_explicitly_set(argv_list)
+    return args
 
 
 # ─── 进度条工厂 ──────────────────────────────────────────────────
@@ -593,6 +651,11 @@ def _make_stock_progress() -> Progress:
 # ─── 主入口 ──────────────────────────────────────────────────────
 def main(argv: Optional[List[str]] = None):
     args = parse_args(argv)
+    args.original_date, args.date = resolve_analysis_date(
+        tickers=args.tickers,
+        requested_date=args.date,
+        date_was_explicit=args.date_was_explicit,
+    )
     intensity = INTENSITY_PROFILES[args.level]
     config = build_config(args, intensity)
     analysts = intensity["analysts"]

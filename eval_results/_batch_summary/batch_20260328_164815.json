@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "002202",
+    "date": "2026-03-28",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 24.5,
+      "confidence": 0.9,
+      "risk_score": 0.75,
+      "reasoning": "公司基本面较强，但现价27.45元已高于22-26元合理区间及24.50元目标中枢，估值偏贵；近5日主力资金多数净流出，3月27日主力净流入占比为-9.71%，资金承接不足；技术面又缺乏趋势确认，当前更适合卖出而非继续持有。"
+    },
+    "elapsed": 2011.8,
+    "stats": {
+      "llm_calls": 36,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3645,
+      "fundamentals_report": 3107,
+      "news_report": 0,
+      "sentiment_report": 5077,
+      "final_trade_decision": 3207
+    }
+  }
+]

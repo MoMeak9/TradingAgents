@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "002202",
+    "date": "2025-03-27",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 9.27,
+      "confidence": 0.9,
+      "risk_score": 0.85,
+      "reasoning": "报告明确建议卖出，核心原因是底层数据存在代码、公司和价格体系冲突，交易对象定义不清；同时主力及超大单连续净流出、机构参与下降，资金面偏弱。利多因素多建立在条件成立前提下，当前不足以覆盖信息污染与风险折价，持有也缺乏足够依据，因此应以反弹减仓、主动降风险为主。"
+    },
+    "elapsed": 1993.1,
+    "stats": {
+      "llm_calls": 36,
+      "tool_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "report_lens": {
+      "market_report": 3832,
+      "fundamentals_report": 2239,
+      "news_report": 0,
+      "sentiment_report": 5115,
+      "final_trade_decision": 2727
+    }
+  }
+]
