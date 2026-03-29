@@ -263,7 +263,7 @@ class TradingAgentsGraph:
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date
         )
-        args = self.propagator.get_graph_args()
+        args = self.propagator.get_graph_args(callbacks=self.callbacks)
 
         if on_node is not None or self.debug:
             # Streaming mode — use "updates" to get per-node granularity

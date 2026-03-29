@@ -39,21 +39,29 @@ class StatsCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Extract token usage from LLM response."""
+        # Try usage_metadata on AIMessage first (langchain-openai >= 0.1)
         try:
             generation = response.generations[0][0]
         except (IndexError, TypeError):
-            return
+            generation = None
 
-        usage_metadata = None
-        if hasattr(generation, "message"):
+        if generation is not None and hasattr(generation, "message"):
             message = generation.message
-            if isinstance(message, AIMessage) and hasattr(message, "usage_metadata"):
-                usage_metadata = message.usage_metadata
+            if isinstance(message, AIMessage):
+                um = getattr(message, "usage_metadata", None)
+                if um:
+                    with self._lock:
+                        self.tokens_in += um.get("input_tokens", 0)
+                        self.tokens_out += um.get("output_tokens", 0)
+                    return
 
-        if usage_metadata:
+        # Fallback: check response.llm_output (older providers / aggregated streaming)
+        llm_output = getattr(response, "llm_output", None) or {}
+        token_usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
+        if token_usage:
             with self._lock:
-                self.tokens_in += usage_metadata.get("input_tokens", 0)
-                self.tokens_out += usage_metadata.get("output_tokens", 0)
+                self.tokens_in += token_usage.get("prompt_tokens", 0) or token_usage.get("input_tokens", 0)
+                self.tokens_out += token_usage.get("completion_tokens", 0) or token_usage.get("output_tokens", 0)
 
     def on_tool_start(
         self,

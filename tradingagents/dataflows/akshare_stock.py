@@ -11,6 +11,9 @@ from stockstats import wrap
 from .config import get_config, bypass_proxy_for_cn, restore_proxy
 from .stockstats_utils import _clean_dataframe
 
+# Maximum number of calendar days to search backwards when current date has no data
+_DATE_FALLBACK_DAYS = 10
+
 # Chinese → English column name mapping
 COLUMN_MAP = {
     "日期": "Date",
@@ -54,6 +57,16 @@ def _request_delay():
     config = get_config()
     interval = config.get("cn_request_interval", 0.3)
     time.sleep(interval)
+
+
+def _is_narrow_range(start_date: str, end_date: str, max_days: int = 3) -> bool:
+    """Check if date range is narrow enough to warrant fallback."""
+    try:
+        s = datetime.strptime(start_date, "%Y-%m-%d")
+        e = datetime.strptime(end_date, "%Y-%m-%d")
+        return (e - s).days <= max_days
+    except ValueError:
+        return False
 
 
 def _retry_call(func, *args, max_retries=2, base_delay=1.0, **kwargs):
@@ -110,8 +123,25 @@ def get_stock_data(
             adjust="qfq",
         )
 
+        # If no data and querying a narrow window, try falling back to earlier dates
+        if (df is None or df.empty) and _is_narrow_range(start_date, end_date):
+            fallback_start = (
+                datetime.strptime(end_date, "%Y-%m-%d")
+                - pd.DateOffset(days=_DATE_FALLBACK_DAYS + 5)
+            ).strftime("%Y%m%d")
+            _request_delay()
+            df = ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=fallback_start,
+                end_date=ak_end,
+                adjust="qfq",
+            )
+
         if df is None or df.empty:
-            return f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            raise Exception(
+                f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            )
 
         df = _normalize_akshare_df(df)
 
@@ -280,7 +310,7 @@ def get_fundamentals(
         df = _retry_call(ak.stock_individual_info_em, symbol=ticker)
 
         if df is None or df.empty:
-            return f"No fundamentals data found for A-share '{ticker}'"
+            raise Exception(f"No fundamentals data found for A-share '{ticker}'")
 
         # Convert to key-value format
         lines = []
@@ -311,7 +341,7 @@ def get_balance_sheet(
         df = _retry_call(ak.stock_balance_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
-            return f"No balance sheet data found for A-share '{ticker}'"
+            raise Exception(f"No balance sheet data found for A-share '{ticker}'")
 
         # Limit to recent reports
         if len(df) > 8:
@@ -341,7 +371,7 @@ def get_cashflow(
         df = _retry_call(ak.stock_cash_flow_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
-            return f"No cash flow data found for A-share '{ticker}'"
+            raise Exception(f"No cash flow data found for A-share '{ticker}'")
 
         if len(df) > 8:
             df = df.head(8)
@@ -370,7 +400,7 @@ def get_income_statement(
         df = _retry_call(ak.stock_profit_sheet_by_report_em, symbol=ticker)
 
         if df is None or df.empty:
-            return f"No income statement data found for A-share '{ticker}'"
+            raise Exception(f"No income statement data found for A-share '{ticker}'")
 
         if len(df) > 8:
             df = df.head(8)

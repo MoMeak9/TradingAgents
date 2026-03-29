@@ -107,7 +107,9 @@ def get_stock_data(
             bs.logout()
 
         if df.empty:
-            return f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            raise BaoStockError(
+                f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            )
 
         # Rename to standard format
         df = df.rename(columns={
@@ -284,7 +286,7 @@ def get_fundamentals(
             bs.logout()
 
         if df.empty:
-            return f"No fundamentals data for A-share '{ticker}'"
+            raise BaoStockError(f"No fundamentals data for A-share '{ticker}'")
 
         # Take the latest row
         latest = df.iloc[-1]
@@ -347,19 +349,19 @@ def _get_financial_report(ticker: str, year: int, quarter: int, query_func_name:
 
             lg = bs.login()
             if lg.error_code != '0':
-                return f"No {report_name} data for A-share '{ticker}'"
+                raise BaoStockError(f"No {report_name} data for A-share '{ticker}'")
 
             try:
                 _request_delay()
                 rs = query_func(code=bs_code, year=prev_year, quarter=prev_quarter)
                 if rs.error_code != '0':
-                    return f"No {report_name} data for A-share '{ticker}'"
+                    raise BaoStockError(f"No {report_name} data for A-share '{ticker}'")
                 df = _bs_query_to_df(rs)
             finally:
                 bs.logout()
 
             if df.empty:
-                return f"No {report_name} data for A-share '{ticker}'"
+                raise BaoStockError(f"No {report_name} data for A-share '{ticker}'")
 
         header = f"# {report_name} for {ticker} (A-share, CNY) [baostock]\n"
         header += f"# Period: {year}Q{quarter}\n"

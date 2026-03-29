@@ -24,6 +24,244 @@ from tradingagents.agents.utils.market_router import (
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
+# === 配置参数 ===
+MARKET_DATA_LOOKBACK_DAYS = 90
+MARKET_INDICATOR_LOOKBACK_DAYS = 60
+REQUIRED_MARKET_INDICATORS = [
+    "close_5_sma",
+    "close_10_sma",
+    "close_20_sma",
+    "close_60_sma",
+    "macd",
+    "macds",
+    "macdh",
+    "rsi",
+    "boll",
+    "boll_ub",
+    "boll_lb",
+]
+
+def _history_start_date(current_date: str, lookback_days: int = MARKET_DATA_LOOKBACK_DAYS) -> str:
+    dt = datetime.strptime(current_date, "%Y-%m-%d")
+    return (dt - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+
+def _build_supplemental_tool_calls(
+    ticker: str,
+    current_date: str,
+    existing_tool_calls: list[dict] | None,
+) -> list[dict]:
+    """补足技术分析所需的历史行情和关键指标调用。"""
+    existing_tool_calls = existing_tool_calls or []
+    supplemental_calls: list[dict] = []
+
+    has_history_stock_data = False
+    requested_indicators = set()
+    history_start = _history_start_date(current_date)
+
+    for tool_call in existing_tool_calls:
+        if tool_call.get("name") == "get_stock_data":
+            args = tool_call.get("args", {})
+            start_date = args.get("start_date")
+            end_date = args.get("end_date")
+            if (
+                isinstance(start_date, str)
+                and isinstance(end_date, str)
+                and start_date < end_date
+                and start_date <= history_start
+                and end_date >= current_date
+            ):
+                has_history_stock_data = True
+        elif tool_call.get("name") == "get_indicators":
+            indicator_arg = str(tool_call.get("args", {}).get("indicator", ""))
+            for indicator in indicator_arg.split(","):
+                indicator = indicator.strip()
+                if indicator:
+                    requested_indicators.add(indicator)
+
+    if not has_history_stock_data:
+        supplemental_calls.append(
+            {
+                "name": "get_stock_data",
+                "args": {
+                    "symbol": ticker,
+                    "start_date": history_start,
+                    "end_date": current_date,
+                },
+            }
+        )
+
+    for indicator in REQUIRED_MARKET_INDICATORS:
+        if indicator not in requested_indicators:
+            supplemental_calls.append(
+                {
+                    "name": "get_indicators",
+                    "args": {
+                        "symbol": ticker,
+                        "indicator": indicator,
+                        "curr_date": current_date,
+                        "look_back_days": MARKET_INDICATOR_LOOKBACK_DAYS,
+                    },
+                }
+            )
+
+    return supplemental_calls
+
+def _build_market_analysis_prompt(
+    company_name: str,
+    ticker: str,
+    market_name: str,
+    currency_name: str,
+    currency_symbol: str,
+    current_date: str,
+    history_start_date: str,
+) -> str:
+    """构建最终技术分析报告提示词。"""
+    return f"""现在请基于上述工具获取的数据，生成详细的技术分析报告。
+
+**分析对象：**
+- 公司名称：{company_name}
+- 股票代码：{ticker}
+- 所属市场：{market_name}
+- 计价货币：{currency_name}（{currency_symbol}）
+
+**数据使用要求：**
+- 已提供从 {history_start_date} 到 {current_date} 的历史行情数据，以及关键技术指标结果。
+- 如果上文已经包含多日历史行情和指标结果，不要再写“仅有单日数据”或“缺乏过去5至10个交易日/20至60个交易日数据”。
+- 短期趋势（5-10个交易日）、中期趋势（20-60个交易日）、成交量分析、关键价格区间，优先基于历史行情和指标结果填写。
+- 只有当工具结果明确显示无数据、报错或记录不足时，才能说明无法计算，并指出具体缺失项。
+
+**输出格式要求（必须严格遵守）：**
+
+请按照以下专业格式输出报告，不要使用emoji符号（如📊📈📉💭等），使用纯文本标题：
+
+# **{company_name}（{ticker}）技术分析报告**
+**分析日期：[当前日期]**
+
+---
+
+## 一、股票基本信息
+
+- **公司名称**：{company_name}
+- **股票代码**：{ticker}
+- **所属市场**：{market_name}
+- **当前价格**：[从工具数据中获取] {currency_symbol}
+- **涨跌幅**：[从工具数据中获取]
+- **成交量**：[从工具数据中获取]
+
+---
+
+## 二、技术指标分析
+
+### 1. 移动平均线（MA）分析
+
+[分析MA5、MA10、MA20、MA60等均线系统，包括：]
+- 当前各均线数值
+- 均线排列形态（多头/空头）
+- 价格与均线的位置关系
+- 均线交叉信号
+
+### 2. MACD指标分析
+
+[分析MACD指标，包括：]
+- DIF、DEA、MACD柱状图当前数值
+- 金叉/死叉信号
+- 背离现象
+- 趋势强度判断
+
+### 3. RSI相对强弱指标
+
+[分析RSI指标，包括：]
+- RSI当前数值
+- 超买/超卖区域判断
+- 背离信号
+- 趋势确认
+
+### 4. 布林带（BOLL）分析
+
+[分析布林带指标，包括：]
+- 上轨、中轨、下轨数值
+- 价格在布林带中的位置
+- 带宽变化趋势
+- 突破信号
+
+---
+
+## 三、价格趋势分析
+
+### 1. 短期趋势（5-10个交易日）
+
+[分析短期价格走势，包括支撑位、压力位、关键价格区间]
+
+### 2. 中期趋势（20-60个交易日）
+
+[分析中期价格走势，结合均线系统判断趋势方向]
+
+### 3. 成交量分析
+
+[分析成交量变化，量价配合情况]
+
+---
+
+## 四、投资建议
+
+### 1. 综合评估
+
+[基于上述技术指标，给出综合评估]
+
+### 2. 操作建议
+
+- **投资评级**：买入/持有/卖出
+- **目标价位**：[给出具体价格区间] {currency_symbol}
+- **止损位**：[给出止损价格] {currency_symbol}
+- **风险提示**：[列出主要风险因素]
+
+### 3. 关键价格区间
+
+- **支撑位**：[具体价格]
+- **压力位**：[具体价格]
+- **突破买入价**：[具体价格]
+- **跌破卖出价**：[具体价格]
+
+---
+
+**重要提醒：**
+- 必须严格按照上述格式输出，使用标准的Markdown标题（#、##、###）
+- 不要使用emoji符号（📊📈📉💭等）
+- 所有价格数据使用{currency_name}（{currency_symbol}）表示
+- 确保在分析中正确使用公司名称"{company_name}"和股票代码"{ticker}"
+- 报告标题必须是：# **{company_name}（{ticker}）技术分析报告**
+- 报告必须基于工具返回的真实数据进行分析
+- 包含具体的技术指标数值和专业分析
+- 提供明确的投资建议和风险提示
+- 报告长度不少于800字
+- 使用中文撰写
+- 使用表格展示数据时，确保格式规范"""
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+import logging
+import time
+import json
+import traceback
+from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
+
+# Import Google tool call handler
+from tradingagents.agents.utils.google_tool_handler import GoogleToolCallHandler
+
+# Import market router utilities
+from tradingagents.agents.utils.market_router import (
+    get_company_name,
+    get_market_info,
+    needs_prefetch,
+    is_dashscope_model,
+    is_deepseek_model,
+    is_zhipu_model,
+)
+
+# Import tool functions
+from tradingagents.agents.utils.core_stock_tools import get_stock_data
+from tradingagents.agents.utils.technical_indicators_tools import get_indicators
+
 MARKET_DATA_LOOKBACK_DAYS = 90
 MARKET_INDICATOR_LOOKBACK_DAYS = 60
 REQUIRED_MARKET_INDICATORS = [

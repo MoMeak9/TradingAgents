@@ -10,6 +10,9 @@ import pandas as pd
 from .config import get_config
 from .stockstats_utils import _clean_dataframe
 
+# Maximum number of trading days to search backwards when current date has no data
+_DATE_FALLBACK_DAYS = 10
+
 
 class TushareError(Exception):
     """Raised when tushare fails, triggering fallback in route_to_vendor."""
@@ -52,6 +55,31 @@ def _request_delay():
     time.sleep(interval)
 
 
+def _is_narrow_range(start_date: str, end_date: str, max_days: int = 3) -> bool:
+    """Check if date range is narrow enough to warrant fallback."""
+    try:
+        s = datetime.strptime(start_date, "%Y-%m-%d")
+        e = datetime.strptime(end_date, "%Y-%m-%d")
+        return (e - s).days <= max_days
+    except ValueError:
+        return False
+
+
+def _fallback_to_previous_trading_day(pro, ts_code: str, ref_date: str) -> pd.DataFrame:
+    """When ref_date has no data, search backwards up to _DATE_FALLBACK_DAYS trading days.
+
+    Returns the daily DataFrame for the most recent available date, or empty DataFrame.
+    """
+    ref_ts = ref_date.replace("-", "")
+    start_ts = (
+        pd.Timestamp(ref_ts) - pd.DateOffset(days=_DATE_FALLBACK_DAYS + 5)
+    ).strftime("%Y%m%d")
+
+    _request_delay()
+    df = pro.daily(ts_code=ts_code, start_date=start_ts, end_date=ref_ts)
+    return df
+
+
 def get_stock_data(
     symbol: Annotated[str, "A-share stock code, e.g. 600519"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -68,8 +96,15 @@ def get_stock_data(
 
         df = pro.daily(ts_code=ts_code, start_date=ts_start, end_date=ts_end)
 
+        # If no data and querying a narrow window, try falling back to earlier dates
+        # (handles: market still open, non-trading day, or data not yet published)
+        if (df is None or df.empty) and _is_narrow_range(start_date, end_date):
+            df = _fallback_to_previous_trading_day(pro, ts_code, end_date)
+
         if df is None or df.empty:
-            return f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            raise TushareError(
+                f"No data found for A-share '{symbol}' between {start_date} and {end_date}"
+            )
 
         # Rename to standard format
         df = df.rename(columns={
@@ -325,7 +360,7 @@ def get_fundamentals(
                     lines.append(f"{label}: {val}")
 
         if not lines:
-            return f"No fundamentals data found for A-share '{ticker}'"
+            raise TushareError(f"No fundamentals data found for A-share '{ticker}'")
 
         header = f"# Company Fundamentals for {ticker} (A-share, CNY) [tushare]\n"
         header += f"# Reference Date: {curr_date or datetime.now().strftime('%Y-%m-%d')}\n"
@@ -359,7 +394,7 @@ def get_balance_sheet(
             end_date=ref_date,
         )
         if df is None or df.empty:
-            return f"No balance sheet data for A-share '{ticker}'"
+            raise TushareError(f"No balance sheet data for A-share '{ticker}'")
         df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
@@ -393,7 +428,7 @@ def get_cashflow(
             end_date=ref_date,
         )
         if df is None or df.empty:
-            return f"No cash flow data for A-share '{ticker}'"
+            raise TushareError(f"No cash flow data for A-share '{ticker}'")
         df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
@@ -427,7 +462,7 @@ def get_income_statement(
             end_date=ref_date,
         )
         if df is None or df.empty:
-            return f"No income statement data for A-share '{ticker}'"
+            raise TushareError(f"No income statement data for A-share '{ticker}'")
         df = df.sort_values("end_date", ascending=False)
         if len(df) > 8:
             df = df.head(8)
