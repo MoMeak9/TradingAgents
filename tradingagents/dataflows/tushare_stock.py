@@ -274,6 +274,18 @@ def get_fundamentals(
         except Exception:
             pass  # handled below; fina_indicator may still succeed
 
+        _request_delay()
+        df_daily = None
+        try:
+            df_daily = _call_with_retry(
+                pro.daily,
+                ts_code=ts_code,
+                start_date=start_date_basic,
+                end_date=ref_date,
+            )
+        except Exception:
+            pass
+
         # fina_indicator: get latest 4 quarterly reports (doc_id=112)
         # Limit to last 2 years to avoid pulling entire history and timing out
         start_date_fina = (
@@ -323,6 +335,20 @@ def get_fundamentals(
                 val = latest_basic.get(col)
                 if val is not None and str(val) not in ("nan", "None", ""):
                     lines.append(f"{label}: {val}")
+
+        if df_daily is not None and not df_daily.empty:
+            latest_daily = df_daily.sort_values("trade_date", ascending=False).iloc[0]
+            trade_date = latest_daily.get("trade_date")
+            close_price = latest_daily.get("close")
+            if trade_date is not None and str(trade_date) not in ("nan", "None", ""):
+                if not lines:
+                    lines.append("## Market Valuation Metrics")
+                if not any(line.startswith("Trade Date:") for line in lines):
+                    lines.append(f"Trade Date: {trade_date}")
+            if close_price is not None and str(close_price) not in ("nan", "None", ""):
+                if not lines:
+                    lines.append("## Market Valuation Metrics")
+                lines.append(f"Close Price: {close_price}")
 
         # --- Financial ratios from fina_indicator ---
         if df_fina is not None and not df_fina.empty:

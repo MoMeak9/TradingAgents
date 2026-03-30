@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2025-03-27",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 11.0,
+      "confidence": 0.9,
+      "risk_score": 0.8,
+      "reasoning": "技术面仍偏空，股价低于多条均线，MACD死叉且量能未见修复，3月17日巨量长阴后未有效收复关键压力位，当前低估值不足以覆盖等待成本与破位风险，已有仓位宜减仓或退出，空仓继续观望。"
+    },
+    "elapsed": 621.1,
+    "stats": {
+      "llm_calls": 13,
+      "tool_calls": 13,
+      "tokens_in": 105956,
+      "tokens_out": 29784
+    },
+    "report_lens": {
+      "market_report": 5309,
+      "fundamentals_report": 3857,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3927
+    }
+  }
+]

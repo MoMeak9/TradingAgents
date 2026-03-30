@@ -3,6 +3,9 @@ Fundamentals Analyst - Adapted from CN version
 Uses tool files for data access instead of toolkit methods
 """
 
+import csv
+import io
+import re
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, ToolMessage
 import logging
@@ -29,6 +32,163 @@ from tradingagents.agents.utils.fundamental_data_tools import (
     get_cashflow,
     get_income_statement,
 )
+from tradingagents.agents.utils.core_stock_tools import get_stock_data
+
+
+def _extract_analysis_date_close_price(stock_data: str, current_date: str) -> str | None:
+    """Extract the analysis-date close price from get_stock_data CSV output."""
+    if not stock_data:
+        return None
+
+    lines = [line for line in stock_data.splitlines() if line.strip() and not line.startswith("#")]
+    if not lines:
+        return None
+
+    try:
+        reader = csv.DictReader(io.StringIO("\n".join(lines)))
+        for row in reader:
+            if str(row.get("Date", "")).strip() == current_date:
+                close_price = str(row.get("Close", "")).strip()
+                return close_price or None
+    except Exception:
+        return None
+
+    return None
+
+
+def _remove_conflicting_latest_price_lines(text: str) -> str:
+    """Remove lines that expose a later/latest price so the model prefers analysis-date price."""
+    kept_lines = []
+    for line in text.splitlines():
+        lowered = line.lower()
+        if "最新股价" in line or "最新价格" in line or "current price" in lowered:
+            continue
+        kept_lines.append(line)
+    return "\n".join(kept_lines).strip()
+
+
+def _collect_fundamentals_context(tools, ticker: str, current_date: str) -> str:
+    """Collect deterministic fundamentals context, including analysis-date price."""
+    chunks = []
+    raw_fundamentals = ""
+    stock_data = ""
+    balance_sheet = ""
+
+    for tool in tools:
+        t_name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
+        try:
+            if t_name == "get_fundamentals":
+                raw_fundamentals = str(
+                    tool.invoke(
+                        {
+                            "ticker": ticker,
+                            "curr_date": current_date,
+                        }
+                    )
+                )
+            elif t_name == "get_stock_data":
+                stock_data = str(
+                    tool.invoke(
+                        {
+                            "symbol": ticker,
+                            "start_date": current_date,
+                            "end_date": current_date,
+                        }
+                    )
+                )
+            elif t_name == "get_balance_sheet":
+                balance_sheet = str(
+                    tool.invoke(
+                        {
+                            "ticker": ticker,
+                            "freq": "quarterly",
+                            "curr_date": current_date,
+                        }
+                    )
+                )
+        except Exception as exc:
+            chunks.append(f"{t_name} failed: {exc}")
+
+    analysis_close = _extract_analysis_date_close_price(stock_data, current_date)
+    if analysis_close:
+        chunks.append(
+            "\n".join(
+                [
+                    f"# Authoritative Analysis-Date Snapshot for {ticker}",
+                    f"Analysis Date: {current_date}",
+                    f"分析日期收盘价: {analysis_close}",
+                    "注意：后续基本面分析中若出现“最新股价/当前股价”，必须以这里的分析日期收盘价为准。",
+                ]
+            )
+        )
+
+    if raw_fundamentals:
+        chunks.append(_remove_conflicting_latest_price_lines(raw_fundamentals))
+    if stock_data:
+        chunks.append(stock_data)
+    if balance_sheet:
+        chunks.append(balance_sheet)
+
+    return "\n\n".join(chunk for chunk in chunks if chunk)
+
+
+def _normalize_fundamentals_report(
+    report: str,
+    analysis_date_close_price: str | None,
+    current_date: str,
+) -> str:
+    """Normalize conflicting price mentions in the final fundamentals report."""
+    if not report or not analysis_date_close_price:
+        return report
+
+    normalized_lines = []
+    price_patterns = [
+        re.compile(r"(最新股价[^\n]*?)(¥)\s*\d+(?:\.\d+)?"),
+        re.compile(r"(当前股价[^\n]*?)(¥)\s*\d+(?:\.\d+)?"),
+        re.compile(r"(股价：\s*)(¥)\s*\d+(?:\.\d+)?"),
+    ]
+
+    for line in report.splitlines():
+        updated = line
+        if any(token in line for token in ("最新股价", "当前股价", "股价：")):
+            for pattern in price_patterns:
+                updated = pattern.sub(
+                    lambda match: f"{match.group(1)}{match.group(2)}{analysis_date_close_price}",
+                    updated,
+                )
+        normalized_lines.append(updated)
+
+    return "\n".join(normalized_lines)
+
+
+def _build_fundamentals_analysis_prompt(
+    company_name: str,
+    ticker: str,
+    current_date: str,
+    currency_info: str,
+    combined_data: str,
+) -> str:
+    """Build the fundamentals analysis prompt with strict date-aligned price rules."""
+    return f"""基于以下真实数据，对{company_name}（股票代码：{ticker}）进行详细的基本面分析：
+
+{combined_data}
+
+请提供：
+1. 公司基本信息分析（{company_name}，股票代码：{ticker}）
+2. 财务状况评估
+3. 盈利能力分析
+4. 估值分析（使用{currency_info}）
+5. 投资建议（买入/持有/卖出）
+
+硬性要求：
+- 基于提供的真实数据进行分析
+- 正确使用公司名称"{company_name}"和股票代码"{ticker}"
+- 价格使用{currency_info}
+- 投资建议使用中文
+- 分析要详细且专业
+- 如果数据中提供了分析日期对应的收盘价，报告中的“当前股价/参考股价”必须以该价格为准
+- 不得使用晚于分析日期的价格，不得用总市值反推价格替代分析日期收盘价
+- 若不同数据源价格口径不一致，必须优先采用不晚于 {current_date} 的分析日期价格，并明确说明口径"""
 
 
 def create_fundamentals_analyst(llm, toolkit=None):
@@ -76,7 +236,7 @@ def create_fundamentals_analyst(llm, toolkit=None):
 
         # Use fundamental_data_tools
         logger.info(f"[Fundamentals Analyst] Using fundamental data tools")
-        tools = [get_fundamentals, get_balance_sheet, get_cashflow, get_income_statement]
+        tools = [get_fundamentals, get_stock_data, get_balance_sheet, get_cashflow, get_income_statement]
 
         # Get tool names for debug
         tool_names_debug = []
@@ -246,27 +406,20 @@ def create_fundamentals_analyst(llm, toolkit=None):
                 if has_tool_result:
                     # Already have tool results, force report generation
                     logger.warning(f"[Force report] Tool already returned data, forcing report generation")
-
-                    force_system_prompt = (
-                        f"你是专业的股票基本面分析师。"
-                        f"你已经收到了股票 {company_name}（代码：{ticker}）的基本面数据。"
-                        f"🚨 现在你必须基于这些数据生成完整的基本面分析报告！🚨\n\n"
-                        f"报告必须包含以下内容：\n"
-                        f"1. 公司基本信息和财务数据分析\n"
-                        f"2. PE、PB、PEG等估值指标分析\n"
-                        f"3. 当前股价是否被低估或高估的判断\n"
-                        f"4. 合理价位区间和目标价位建议\n"
-                        f"5. 基于基本面的投资建议（买入/持有/卖出）\n\n"
-                        f"要求：\n"
-                        f"- 使用中文撰写报告\n"
-                        f"- 基于消息历史中的真实数据进行分析\n"
-                        f"- 分析要详细且专业\n"
-                        f"- 投资建议必须明确（买入/持有/卖出）"
+                    currency_info = f"{market_info['currency_name']}（{market_info['currency_symbol']}）"
+                    combined_data = _collect_fundamentals_context(tools, ticker, current_date)
+                    force_system_prompt = _build_fundamentals_analysis_prompt(
+                        company_name=company_name,
+                        ticker=ticker,
+                        current_date=current_date,
+                        currency_info=currency_info,
+                        combined_data=combined_data,
                     )
 
                     force_prompt = ChatPromptTemplate.from_messages([
-                        ("system", force_system_prompt),
+                        ("system", "你是专业的股票基本面分析师，必须严格遵守给定的数据口径要求。"),
                         MessagesPlaceholder(variable_name="messages"),
+                        ("human", force_system_prompt),
                     ])
 
                     force_chain = force_prompt | fresh_llm
@@ -274,6 +427,8 @@ def create_fundamentals_analyst(llm, toolkit=None):
                     force_result = force_chain.invoke({"messages": messages})
 
                     report = str(force_result.content) if hasattr(force_result, 'content') else "基本面分析完成"
+                    analysis_close = _extract_analysis_date_close_price(combined_data, current_date)
+                    report = _normalize_fundamentals_report(report, analysis_close, current_date)
                     logger.info(f"[Force report] Report generated, length: {len(report)} chars")
 
                     return {
@@ -315,6 +470,9 @@ def create_fundamentals_analyst(llm, toolkit=None):
                 if has_tool_result or has_analysis_content:
                     logger.info(f"[Decision] Skipping forced tool call - already have results/content")
                     report = str(result.content) if hasattr(result, 'content') else "基本面分析完成"
+                    combined_data = _collect_fundamentals_context(tools, ticker, current_date)
+                    analysis_close = _extract_analysis_date_close_price(combined_data, current_date)
+                    report = _normalize_fundamentals_report(report, analysis_close, current_date)
                     return {
                         "fundamentals_report": report,
                         "messages": [result],
@@ -324,56 +482,21 @@ def create_fundamentals_analyst(llm, toolkit=None):
                 # No tool results and no analysis content - forced tool call
                 logger.info(f"[Decision] Executing forced tool call")
                 try:
-                    # Find get_fundamentals tool
-                    fundamentals_tool = None
-                    for tool in tools:
-                        t_name = getattr(tool, 'name', None) or getattr(tool, '__name__', None)
-                        if t_name == 'get_fundamentals':
-                            fundamentals_tool = tool
-                            break
-
-                    if fundamentals_tool:
-                        combined_data = fundamentals_tool.invoke({
-                            'ticker': ticker,
-                            'curr_date': current_date,
-                        })
-                        # Also fetch balance sheet for richer data
-                        for tool in tools:
-                            t_name = getattr(tool, 'name', None) or getattr(tool, '__name__', None)
-                            if t_name == 'get_balance_sheet':
-                                try:
-                                    bs_data = tool.invoke({'ticker': ticker, 'freq': 'quarterly', 'curr_date': current_date})
-                                    combined_data += "\n\n" + str(bs_data)
-                                except Exception:
-                                    pass
-                                break
-                        logger.info(f"[Forced call] Tool call success, data length: {len(str(combined_data))} chars")
-                    else:
-                        combined_data = "Fundamentals tool not available"
-                        logger.warning(f"[Forced call] Fundamentals tool not found")
+                    combined_data = _collect_fundamentals_context(tools, ticker, current_date)
+                    logger.info(f"[Forced call] Tool call success, data length: {len(str(combined_data))} chars")
                 except Exception as e:
                     combined_data = f"Fundamentals tool call failed: {e}"
                     logger.error(f"[Forced call] Exception: {e}")
 
                 currency_info = f"{market_info['currency_name']}（{market_info['currency_symbol']}）"
 
-                analysis_prompt = f"""基于以下真实数据，对{company_name}（股票代码：{ticker}）进行详细的基本面分析：
-
-{combined_data}
-
-请提供：
-1. 公司基本信息分析（{company_name}，股票代码：{ticker}）
-2. 财务状况评估
-3. 盈利能力分析
-4. 估值分析（使用{currency_info}）
-5. 投资建议（买入/持有/卖出）
-
-要求：
-- 基于提供的真实数据进行分析
-- 正确使用公司名称"{company_name}"和股票代码"{ticker}"
-- 价格使用{currency_info}
-- 投资建议使用中文
-- 分析要详细且专业"""
+                analysis_prompt = _build_fundamentals_analysis_prompt(
+                    company_name=company_name,
+                    ticker=ticker,
+                    current_date=current_date,
+                    currency_info=currency_info,
+                    combined_data=combined_data,
+                )
 
                 try:
                     analysis_prompt_template = ChatPromptTemplate.from_messages([
@@ -388,6 +511,8 @@ def create_fundamentals_analyst(llm, toolkit=None):
                         report = analysis_result.content
                     else:
                         report = str(analysis_result)
+                    analysis_close = _extract_analysis_date_close_price(combined_data, current_date)
+                    report = _normalize_fundamentals_report(report, analysis_close, current_date)
 
                     logger.info(f"[Fundamentals Analyst] Forced tool call complete, report length: {len(report)}")
 
@@ -401,9 +526,13 @@ def create_fundamentals_analyst(llm, toolkit=None):
                 }
 
         # Fallback
+        fallback_report = result.content if hasattr(result, 'content') else str(result)
+        combined_data = _collect_fundamentals_context(tools, ticker, current_date)
+        analysis_close = _extract_analysis_date_close_price(combined_data, current_date)
+        fallback_report = _normalize_fundamentals_report(fallback_report, analysis_close, current_date)
         return {
             "messages": [result],
-            "fundamentals_report": result.content if hasattr(result, 'content') else str(result),
+            "fundamentals_report": fallback_report,
             "fundamentals_tool_call_count": tool_call_count
         }
 

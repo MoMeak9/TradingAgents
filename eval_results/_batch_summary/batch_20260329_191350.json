@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "000001",
+    "date": "2025-03-27",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 10.64,
+      "confidence": 0.9,
+      "risk_score": 0.75,
+      "reasoning": "当前技术面偏空更明确，股价低于多条均线，MACD死叉且绿柱扩张，RSI处于弱势区间，放量长阴后缺乏有效修复。估值虽显示中期有修复空间，但基本面关键验证不足、实现路径不清晰。建议已有仓位主动减仓，若跌破10.64则清仓，空仓者暂不买入。"
+    },
+    "elapsed": 1309.9,
+    "stats": {
+      "llm_calls": 13,
+      "tool_calls": 13,
+      "tokens_in": 102615,
+      "tokens_out": 27081
+    },
+    "report_lens": {
+      "market_report": 4559,
+      "fundamentals_report": 2832,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3768
+    }
+  }
+]

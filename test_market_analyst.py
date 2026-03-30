@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 from tradingagents.agents.analysts import market_analyst
 
@@ -49,6 +50,15 @@ class MarketAnalystToolPlanningTests(unittest.TestCase):
         self.assertIn("短期趋势（5-10个交易日）", prompt)
         self.assertIn("中期趋势（20-60个交易日）", prompt)
         self.assertIn("关键价格区间", prompt)
+
+    def test_history_window_is_long_enough_for_ma60(self):
+        current_date = "2025-03-27"
+        history_start = market_analyst._history_start_date(current_date)
+
+        current_dt = datetime.strptime(current_date, "%Y-%m-%d")
+        history_dt = datetime.strptime(history_start, "%Y-%m-%d")
+
+        self.assertGreaterEqual((current_dt - history_dt).days, 180)
 
 
 if __name__ == "__main__":

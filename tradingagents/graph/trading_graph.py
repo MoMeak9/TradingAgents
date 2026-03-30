@@ -415,6 +415,8 @@ class TradingAgentsGraph:
         filename = f"{ticker}_{trade_date}_report.md"
         filepath = report_dir / filename
 
+        final_decision = str(final_state.get("final_trade_decision", "")).strip()
+
         # Build report sections
         lines = [
             f"# 股票分析报告 — {ticker}",
@@ -510,7 +512,7 @@ class TradingAgentsGraph:
                     lines.append(content.strip())
                     lines.append("")
             risk_judge = risk.get("judge_decision", "")
-            if risk_judge:
+            if risk_judge and risk_judge.strip() != final_decision:
                 lines.append("### 风险经理最终决策")
                 lines.append("")
                 lines.append(risk_judge.strip())
@@ -519,7 +521,6 @@ class TradingAgentsGraph:
             lines.append("")
 
         # Final Decision
-        final_decision = final_state.get("final_trade_decision", "")
         if final_decision:
             lines.append("## 最终交易决策")
             lines.append("")

@@ -25,7 +25,7 @@ from tradingagents.agents.utils.core_stock_tools import get_stock_data
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
 # === 配置参数 ===
-MARKET_DATA_LOOKBACK_DAYS = 90
+MARKET_DATA_LOOKBACK_DAYS = 180
 MARKET_INDICATOR_LOOKBACK_DAYS = 60
 REQUIRED_MARKET_INDICATORS = [
     "close_5_sma",
@@ -41,7 +41,9 @@ REQUIRED_MARKET_INDICATORS = [
     "boll_lb",
 ]
 
-def _history_start_date(current_date: str, lookback_days: int = MARKET_DATA_LOOKBACK_DAYS) -> str:
+def _history_start_date(current_date: str, lookback_days: int | None = None) -> str:
+    if lookback_days is None:
+        lookback_days = MARKET_DATA_LOOKBACK_DAYS
     dt = datetime.strptime(current_date, "%Y-%m-%d")
     return (dt - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
 
@@ -262,7 +264,7 @@ from tradingagents.agents.utils.market_router import (
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
-MARKET_DATA_LOOKBACK_DAYS = 90
+MARKET_DATA_LOOKBACK_DAYS = 180
 MARKET_INDICATOR_LOOKBACK_DAYS = 60
 REQUIRED_MARKET_INDICATORS = [
     "close_5_sma",
@@ -279,7 +281,9 @@ REQUIRED_MARKET_INDICATORS = [
 ]
 
 
-def _history_start_date(current_date: str, lookback_days: int = MARKET_DATA_LOOKBACK_DAYS) -> str:
+def _history_start_date(current_date: str, lookback_days: int | None = None) -> str:
+    if lookback_days is None:
+        lookback_days = MARKET_DATA_LOOKBACK_DAYS
     dt = datetime.strptime(current_date, "%Y-%m-%d")
     return (dt - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
 
