@@ -1,0 +1,132 @@
+[
+  {
+    "ticker": "600388",
+    "date": "2026-04-03",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 17.2,
+      "confidence": 0.92,
+      "risk_score": 0.78,
+      "reasoning": "现价18.45元处于合理区间而非明显低估，安全边际不足；关键财务与技术验证缺失，上行至19.80元及以上依赖后续业绩、订单和现金流兑现，而下行回归17.20元甚至更低所需条件更弱，因此当前更适合卖出或显著减仓，等待更低价位或更强验证后再评估。"
+    },
+    "elapsed": 868.0,
+    "stats": {
+      "llm_calls": 19,
+      "tool_calls": 16,
+      "tokens_in": 208847,
+      "tokens_out": 44434
+    },
+    "report_lens": {
+      "market_report": 3741,
+      "fundamentals_report": 2861,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 4475
+    }
+  },
+  {
+    "ticker": "600030",
+    "date": "2026-04-03",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 23.3,
+      "confidence": 0.93,
+      "risk_score": 0.78,
+      "reasoning": "股价低于MA5、MA10、MA20、MA50且均线空头排列，MACD仍在零轴下方未金叉，24.51元冲高回落且反弹未放量，说明弱势趋势已确认而反转证据不足；估值也未到显著低估，继续持有属于为未确认修复承担风险，故应卖出并等待右侧确认。"
+    },
+    "elapsed": 976.8,
+    "stats": {
+      "llm_calls": 19,
+      "tool_calls": 16,
+      "tokens_in": 240352,
+      "tokens_out": 47320
+    },
+    "report_lens": {
+      "market_report": 4300,
+      "fundamentals_report": 2628,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3211
+    }
+  },
+  {
+    "ticker": "600987",
+    "date": "2026-04-03",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 7.35,
+      "confidence": 0.93,
+      "risk_score": 0.76,
+      "reasoning": "技术面仅属弱修复，MACD仍在零轴下、RSI低于50，股价未有效站上7.55-7.60压力位且量能不足；基本面缺少利润、估值等关键锚点，继续持有面临回撤、时间与机会成本，当前更适合卖出回避。"
+    },
+    "elapsed": 870.7,
+    "stats": {
+      "llm_calls": 19,
+      "tool_calls": 16,
+      "tokens_in": 226668,
+      "tokens_out": 43503
+    },
+    "report_lens": {
+      "market_report": 4433,
+      "fundamentals_report": 3457,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3462
+    }
+  },
+  {
+    "ticker": "603019",
+    "date": "2026-04-03",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 38.0,
+      "confidence": 0.9,
+      "risk_score": 0.85,
+      "reasoning": "当前缺乏技术面、基本面、情绪面和宏观催化等可验证信息，无法证明继续持有的风险调整后回报足够，高波动科技股在信息缺失下风险被放大。建议新增资金不买，已有仓位减仓或退出，待数据和验证恢复后再评估。"
+    },
+    "elapsed": 794.1,
+    "stats": {
+      "llm_calls": 19,
+      "tool_calls": 16,
+      "tokens_in": 177902,
+      "tokens_out": 39366
+    },
+    "report_lens": {
+      "market_report": 3670,
+      "fundamentals_report": 304,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3617
+    }
+  },
+  {
+    "ticker": "601728",
+    "date": "2026-04-03",
+    "status": "success",
+    "decision": {
+      "action": "卖出",
+      "target_price": 6.0,
+      "confidence": 0.92,
+      "risk_score": 0.78,
+      "reasoning": "报告明确主张卖出，核心依据是现价、趋势、估值、财务兑现及催化等关键信息缺失，无法证明继续持有的风险收益比合理；与其继续暴露于低效风险、时间风险和错误归类风险，不如先退出等待验证。"
+    },
+    "elapsed": 909.6,
+    "stats": {
+      "llm_calls": 19,
+      "tool_calls": 16,
+      "tokens_in": 192262,
+      "tokens_out": 43408
+    },
+    "report_lens": {
+      "market_report": 3599,
+      "fundamentals_report": 92,
+      "news_report": 0,
+      "sentiment_report": 0,
+      "final_trade_decision": 3049
+    }
+  }
+]
