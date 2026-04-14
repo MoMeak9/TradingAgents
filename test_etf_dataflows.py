@@ -1,7 +1,14 @@
 import importlib
+import sys
+import types
 import unittest
 from unittest.mock import patch
 
+rank_bm25_stub = types.ModuleType("rank_bm25")
+rank_bm25_stub.BM25Okapi = object
+sys.modules.setdefault("rank_bm25", rank_bm25_stub)
+
+import tradingagents.agents.utils.etf_data_tools as etf_data_tools
 import tradingagents.dataflows.config as config_module
 import tradingagents.dataflows.interface as interface
 import tradingagents.dataflows.market_utils as market_utils
@@ -78,6 +85,26 @@ class ETFDataflowRoutingTests(unittest.TestCase):
         result = interface.route_to_vendor("get_etf_profile", "600519")
 
         self.assertIn("currently supports only A-share exchange-traded ETFs", result)
+
+    def test_etf_tool_wrappers_call_route_to_vendor_with_etf_asset_type(self):
+        with patch(
+            "tradingagents.agents.utils.etf_data_tools.route_to_vendor",
+            return_value="ok",
+        ) as mock_route:
+            result = etf_data_tools.get_etf_profile.invoke(
+                {"ticker": "510300", "curr_date": "2025-01-10"}
+            )
+
+        self.assertEqual("ok", result)
+        mock_route.assert_called_once_with(
+            "get_etf_profile",
+            "510300",
+            "2025-01-10",
+            asset_type="etf",
+        )
+
+    def test_etf_vendor_method_registry_is_populated(self):
+        self.assertIn("akshare", interface.ETF_VENDOR_METHODS["get_etf_profile"])
 
 
 if __name__ == "__main__":

@@ -39,6 +39,21 @@ from .akshare_news import (
     get_global_news as get_akshare_global_news,
 )
 
+try:
+    from .akshare_etf import (
+        get_etf_price_data as get_akshare_etf_price_data,
+        get_etf_indicators as get_akshare_etf_indicators,
+        get_etf_profile as get_akshare_etf_profile,
+        get_etf_holdings as get_akshare_etf_holdings,
+        get_etf_fund_flow as get_akshare_etf_fund_flow,
+        get_etf_discount_premium as get_akshare_etf_discount_premium,
+        get_etf_tracking_info as get_akshare_etf_tracking_info,
+        get_etf_news as get_akshare_etf_news,
+    )
+    _AKSHARE_ETF_AVAILABLE = True
+except ImportError:
+    _AKSHARE_ETF_AVAILABLE = False
+
 # Tushare vendor imports (primary for A-share, optional: requires tushare package)
 try:
     import tushare as _tushare_check  # verify the package is actually installed
@@ -57,6 +72,23 @@ try:
 except ImportError:
     _TUSHARE_AVAILABLE = False
     TushareError = Exception  # fallback so references don't break
+
+_TUSHARE_ETF_AVAILABLE = False
+if _TUSHARE_AVAILABLE:
+    try:
+        from .tushare_etf import (
+            get_etf_price_data as get_tushare_etf_price_data,
+            get_etf_indicators as get_tushare_etf_indicators,
+            get_etf_profile as get_tushare_etf_profile,
+            get_etf_holdings as get_tushare_etf_holdings,
+            get_etf_fund_flow as get_tushare_etf_fund_flow,
+            get_etf_discount_premium as get_tushare_etf_discount_premium,
+            get_etf_tracking_info as get_tushare_etf_tracking_info,
+            get_etf_news as get_tushare_etf_news,
+        )
+        _TUSHARE_ETF_AVAILABLE = True
+    except ImportError:
+        pass
 
 # Market detection
 from .market_utils import (
@@ -247,14 +279,38 @@ VENDOR_METHODS = {
 }
 
 ETF_VENDOR_METHODS = {
-    "get_etf_price_data": {},
-    "get_etf_indicators": {},
-    "get_etf_profile": {},
-    "get_etf_holdings": {},
-    "get_etf_fund_flow": {},
-    "get_etf_discount_premium": {},
-    "get_etf_tracking_info": {},
-    "get_etf_news": {},
+    "get_etf_price_data": {
+        **({"tushare": get_tushare_etf_price_data} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_price_data} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_indicators": {
+        **({"tushare": get_tushare_etf_indicators} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_indicators} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_profile": {
+        **({"tushare": get_tushare_etf_profile} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_profile} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_holdings": {
+        **({"tushare": get_tushare_etf_holdings} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_holdings} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_fund_flow": {
+        **({"tushare": get_tushare_etf_fund_flow} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_fund_flow} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_discount_premium": {
+        **({"tushare": get_tushare_etf_discount_premium} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_discount_premium} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_tracking_info": {
+        **({"tushare": get_tushare_etf_tracking_info} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_tracking_info} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_news": {
+        **({"tushare": get_tushare_etf_news} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_news} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
 }
 
 def get_category_for_method(method: str) -> str:
