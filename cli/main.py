@@ -25,12 +25,14 @@ from rich.rule import Rule
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
-from cli.models import AnalystType
+from cli.models import AnalystType, AssetType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
 
 console = Console()
+
+ETF_CODE_PREFIXES = ("51", "52", "56", "58", "15", "16")
 
 app = typer.Typer(
     name="TradingAgents",
@@ -498,29 +500,40 @@ def get_user_selections():
             box_content += f"\n[dim]Default: {default}[/dim]"
         return Panel(box_content, border_style="blue", padding=(1, 2))
 
-    # Step 1: Ticker symbol
+    # Step 1: Asset type
     console.print(
         create_question_box(
-            "Step 1: Ticker Symbol", "Enter the ticker symbol to analyze", "SPY"
+            "Step 1: Asset Type",
+            "Choose which asset framework to use",
+            AssetType.STOCK.value,
+        )
+    )
+    selected_asset_type = get_asset_type()
+
+    # Step 2: Ticker symbol
+    console.print(
+        create_question_box(
+            "Step 2: Ticker Symbol", "Enter the ticker symbol to analyze", "SPY"
         )
     )
     selected_ticker = get_ticker()
+    validate_asset_selection(selected_asset_type, selected_ticker)
 
-    # Step 2: Analysis date
+    # Step 3: Analysis date
     default_date = datetime.datetime.now().strftime("%Y-%m-%d")
     console.print(
         create_question_box(
-            "Step 2: Analysis Date",
+            "Step 3: Analysis Date",
             "Enter the analysis date (YYYY-MM-DD)",
             default_date,
         )
     )
     analysis_date = get_analysis_date()
 
-    # Step 3: Select analysts
+    # Step 4: Select analysts
     console.print(
         create_question_box(
-            "Step 3: Analysts Team", "Select your LLM analyst agents for the analysis"
+            "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
         )
     )
     selected_analysts = select_analysts()
@@ -528,32 +541,32 @@ def get_user_selections():
         f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
     )
 
-    # Step 4: Research depth
+    # Step 5: Research depth
     console.print(
         create_question_box(
-            "Step 4: Research Depth", "Select your research depth level"
+            "Step 5: Research Depth", "Select your research depth level"
         )
     )
     selected_research_depth = select_research_depth()
 
-    # Step 5: OpenAI backend
+    # Step 6: OpenAI backend
     console.print(
         create_question_box(
-            "Step 5: OpenAI backend", "Select which service to talk to"
+            "Step 6: OpenAI backend", "Select which service to talk to"
         )
     )
     selected_llm_provider, backend_url = select_llm_provider()
     
-    # Step 6: Thinking agents
+    # Step 7: Thinking agents
     console.print(
         create_question_box(
-            "Step 6: Thinking Agents", "Select your thinking agents for analysis"
+            "Step 7: Thinking Agents", "Select your thinking agents for analysis"
         )
     )
     selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
     selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
-    # Step 7: Provider-specific thinking configuration
+    # Step 8: Provider-specific thinking configuration
     thinking_level = None
     reasoning_effort = None
 
@@ -561,7 +574,7 @@ def get_user_selections():
     if provider_lower == "google":
         console.print(
             create_question_box(
-                "Step 7: Thinking Mode",
+                "Step 8: Thinking Mode",
                 "Configure Gemini thinking mode"
             )
         )
@@ -569,13 +582,14 @@ def get_user_selections():
     elif provider_lower == "openai":
         console.print(
             create_question_box(
-                "Step 7: Reasoning Effort",
+                "Step 8: Reasoning Effort",
                 "Configure OpenAI reasoning effort level"
             )
         )
         reasoning_effort = ask_openai_reasoning_effort()
 
     return {
+        "asset_type": selected_asset_type.value,
         "ticker": selected_ticker,
         "analysis_date": analysis_date,
         "analysts": selected_analysts,
@@ -589,9 +603,39 @@ def get_user_selections():
     }
 
 
+def get_asset_type() -> AssetType:
+    """Get the asset type from user input."""
+    while True:
+        asset_type = typer.prompt("", default=AssetType.STOCK.value).strip().lower()
+        try:
+            return AssetType(asset_type)
+        except ValueError:
+            console.print("[red]Error: Asset type must be 'stock' or 'etf'[/red]")
+
+
 def get_ticker():
     """Get ticker symbol from user input."""
     return typer.prompt("", default="SPY")
+
+
+def validate_asset_selection(asset_type: AssetType, ticker: str):
+    """First-pass asset validation hook.
+
+    ETF mode only accepts obvious A-share exchange-traded ETF codes for now.
+    Later tasks will replace this with richer metadata validation.
+    """
+    if asset_type != AssetType.ETF:
+        return
+
+    normalized = ticker.strip().upper()
+    if len(normalized) != 6 or not normalized.isdigit():
+        raise typer.BadParameter(
+            "ETF 模式当前仅支持 6 位 A 股场内 ETF 代码。"
+        )
+    if not normalized.startswith(ETF_CODE_PREFIXES):
+        raise typer.BadParameter(
+            "ETF 模式当前仅支持 A 股场内 ETF（代码前缀 51/52/56/58/15/16）。"
+        )
 
 
 def get_analysis_date():
@@ -902,6 +946,7 @@ def run_analysis():
 
     # Create config with selected research depth
     config = DEFAULT_CONFIG.copy()
+    config["asset_type"] = selections["asset_type"]
     config["max_debate_rounds"] = selections["research_depth"]
     config["max_risk_discuss_rounds"] = selections["research_depth"]
     config["quick_think_llm"] = selections["shallow_thinker"]
