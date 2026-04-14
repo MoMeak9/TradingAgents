@@ -218,3 +218,7 @@ __marimo__/
 # Cache
 **/data_cache/
 .claude
+
+# Generated reports and evaluation outputs
+tradingagents/docs/reports/
+eval_results/
