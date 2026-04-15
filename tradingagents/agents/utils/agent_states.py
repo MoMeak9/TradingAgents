@@ -50,6 +50,8 @@ class RiskDebateState(TypedDict):
 class AgentState(MessagesState):
     company_of_interest: Annotated[str, "Company that we are interested in trading"]
     trade_date: Annotated[str, "What date we are trading at"]
+    asset_type: Annotated[str, "Asset type: stock or etf"]
+    analysis_mode: Annotated[str, "Analysis mode such as hybrid"]
     market_context: Annotated[dict, "Market context (market, exchange, currency, language)"]
 
     sender: Annotated[str, "Agent that sent this message"]
@@ -62,6 +64,10 @@ class AgentState(MessagesState):
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     china_market_report: Annotated[str, "Report from the China Market Analyst"]
+    etf_market_report: Annotated[str, "Report from the ETF Market Analyst"]
+    etf_product_report: Annotated[str, "Report from the ETF Product Analyst"]
+    etf_news_report: Annotated[str, "Report from the ETF News Analyst"]
+    etf_flow_report: Annotated[str, "Report from the ETF Flow Analyst"]
 
     # Tool call counters (death-loop prevention)
     market_tool_call_count: Annotated[int, "Number of tool calls by Market Analyst"]
@@ -69,6 +75,8 @@ class AgentState(MessagesState):
     news_tool_call_count: Annotated[int, "Number of tool calls by News Analyst"]
     fundamentals_tool_call_count: Annotated[int, "Number of tool calls by Fundamentals Analyst"]
     china_market_tool_call_count: Annotated[int, "Number of tool calls by China Market Analyst"]
+    flow_tool_call_count: Annotated[int, "Number of tool calls by ETF Flow Analyst"]
+    product_tool_call_count: Annotated[int, "Number of tool calls by ETF Product Analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[
@@ -83,3 +91,25 @@ class AgentState(MessagesState):
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+
+
+ETF_GENERIC_REPORT_MAP = {
+    "etf_market_report": "market_report",
+    "etf_product_report": "fundamentals_report",
+    "etf_news_report": "news_report",
+    "etf_flow_report": "sentiment_report",
+}
+
+
+def apply_asset_report_mapping(update: dict, asset_type: str) -> dict:
+    """Populate generic downstream report slots from asset-specific ETF fields."""
+    mapped = dict(update)
+    if asset_type != "etf":
+        return mapped
+
+    for etf_field, generic_field in ETF_GENERIC_REPORT_MAP.items():
+        content = mapped.get(etf_field)
+        if content is not None and generic_field not in mapped:
+            mapped[generic_field] = content
+
+    return mapped

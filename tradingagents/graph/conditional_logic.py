@@ -8,6 +8,8 @@ _MAX_TOOL_CALLS = {
     "social": 3,
     "news": 3,
     "fundamentals": 1,
+    "flow": 3,
+    "product": 2,
     "china_market": 3,
 }
 
@@ -90,6 +92,28 @@ class ConditionalLogic:
         return self._should_continue_analyst(
             state, "china_market", "china_market_report", "china_market_tool_call_count",
             "tools_china_market", "Msg Clear China_market",
+        )
+
+    def should_continue_flow(self, state: AgentState):
+        """Determine if ETF flow analysis should continue."""
+        return self._should_continue_analyst(
+            state,
+            "flow",
+            "etf_flow_report",
+            "flow_tool_call_count",
+            "tools_flow",
+            "Msg Clear Flow",
+        )
+
+    def should_continue_product(self, state: AgentState):
+        """Determine if ETF product analysis should continue."""
+        return self._should_continue_analyst(
+            state,
+            "product",
+            "etf_product_report",
+            "product_tool_call_count",
+            "tools_product",
+            "Msg Clear Product",
         )
 
     def should_continue_debate(self, state: AgentState) -> str:

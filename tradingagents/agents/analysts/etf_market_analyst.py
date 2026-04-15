@@ -10,6 +10,7 @@ from tradingagents.agents.utils.etf_prompt_utils import (
     ETF_MARKET_INDICATORS,
     build_etf_report_header,
 )
+from tradingagents.agents.utils.agent_states import apply_asset_report_mapping
 
 
 def _history_start_date(current_date: str, lookback_days: int = 180) -> str:
@@ -85,6 +86,11 @@ def create_etf_market_analyst(llm, toolkit=None):
         chain = prompt | llm.bind_tools(tools)
         result = chain.invoke({"messages": state["messages"]})
         report = result.content if not getattr(result, "tool_calls", None) else ""
-        return {"messages": [result], "etf_market_report": report, "market_report": report}
+        update = {
+            "messages": [result],
+            "etf_market_report": report,
+            "market_tool_call_count": state.get("market_tool_call_count", 0) + 1,
+        }
+        return apply_asset_report_mapping(update, "etf")
 
     return etf_market_analyst_node

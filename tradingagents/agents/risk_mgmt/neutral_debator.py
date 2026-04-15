@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 def create_neutral_debator(llm):
     def neutral_node(state) -> dict:
+        asset_type = state.get("asset_type", "stock")
         risk_debate_state = state["risk_debate_state"]
         history = risk_debate_state.get("history", "")
         neutral_history = risk_debate_state.get("neutral_history", "")
@@ -23,7 +24,23 @@ def create_neutral_debator(llm):
 
         logger.info(f"Neutral Analyst input data lengths: market={len(market_research_report)}, sentiment={len(sentiment_report)}, news={len(news_report)}, fundamentals={len(fundamentals_report)}, trader={len(trader_decision)}, history={len(history)}")
 
-        prompt = f"""作为中性风险分析师，您的角色是提供平衡的视角，权衡交易员决策或计划的潜在收益和风险。您优先考虑全面的方法，评估上行和下行风险，同时考虑更广泛的市场趋势、潜在的经济变化和多元化策略。以下是交易员的决策：
+        if asset_type == "etf":
+            prompt = f"""作为中性 ETF 风险分析师，您的角色是平衡交易机会与配置风险，综合评估 ETF 的上行弹性、回撤风险、流动性、折溢价和跟踪稳定性。以下是交易员的决策：
+
+{trader_decision}
+
+请利用以下资料，在激进和保守之间提出更均衡的 ETF 策略：
+市场研究报告：{market_research_report}
+社交媒体情绪报告：{sentiment_report}
+最新世界事务报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+当前对话历史：{history}
+激进分析师最后回应：{current_aggressive_response}
+安全分析师最后回应：{current_conservative_response}
+
+请用中文辩论式输出，说明 ETF 当前更适合交易、配置，还是保持中性观望。"""
+        else:
+            prompt = f"""作为中性风险分析师，您的角色是提供平衡的视角，权衡交易员决策或计划的潜在收益和风险。您优先考虑全面的方法，评估上行和下行风险，同时考虑更广泛的市场趋势、潜在的经济变化和多元化策略。以下是交易员的决策：
 
 {trader_decision}
 

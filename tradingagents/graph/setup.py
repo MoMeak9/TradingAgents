@@ -45,12 +45,21 @@ class GraphSetup:
 
     def _create_analyst_node(self, analyst_type: str):
         """Create an analyst node, passing toolkit if the factory accepts it."""
-        factory_map = {
-            "market": create_market_analyst,
-            "social": create_social_media_analyst,
-            "news": create_news_analyst,
-            "fundamentals": create_fundamentals_analyst,
-        }
+        asset_type = getattr(self, "asset_type", "stock")
+        if asset_type == "etf":
+            factory_map = {
+                "market": create_etf_market_analyst,
+                "flow": create_etf_flow_analyst,
+                "news": create_etf_news_analyst,
+                "product": create_etf_product_analyst,
+            }
+        else:
+            factory_map = {
+                "market": create_market_analyst,
+                "social": create_social_media_analyst,
+                "news": create_news_analyst,
+                "fundamentals": create_fundamentals_analyst,
+            }
 
         # china_market is optional (may not be imported)
         try:
@@ -73,7 +82,7 @@ class GraphSetup:
         return factory(self.quick_thinking_llm)
 
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self, selected_analysts=["market", "social", "news", "fundamentals"], asset_type="stock"
     ):
         """Set up and compile the agent workflow graph.
 
@@ -87,6 +96,8 @@ class GraphSetup:
         """
         if len(selected_analysts) == 0:
             raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
+
+        self.asset_type = asset_type
 
         # Create analyst nodes
         analyst_nodes = {}

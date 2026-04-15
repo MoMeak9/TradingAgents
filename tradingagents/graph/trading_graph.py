@@ -18,8 +18,8 @@ from tradingagents.agents.utils.agent_states import (
     InvestDebateState,
     RiskDebateState,
 )
-from tradingagents.dataflows.config import set_config, set_market_context
-from tradingagents.dataflows.market_utils import detect_market
+from tradingagents.dataflows.config import set_config, set_market_context, set_asset_context
+from tradingagents.dataflows.market_utils import detect_market, is_supported_cn_etf
 
 # Import the tool methods from modular tool files
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
@@ -35,6 +35,16 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news,
     get_sentiment,
+)
+from tradingagents.agents.utils.etf_data_tools import (
+    get_etf_price_data,
+    get_etf_indicators,
+    get_etf_profile,
+    get_etf_holdings,
+    get_etf_fund_flow,
+    get_etf_discount_premium,
+    get_etf_tracking_info,
+    get_etf_news,
 )
 
 # Market router for toolkit
@@ -68,6 +78,8 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
+        self._asset_type = self.config.get("asset_type", "stock")
+        self._analysis_mode = self.config.get("etf_analysis_mode", "hybrid")
 
         # Update the interface's config
         set_config(self.config)
@@ -128,7 +140,11 @@ class TradingAgentsGraph:
             toolkit=None,  # Market routing handled by market_router module
         )
 
-        self.propagator = Propagator(max_recur_limit=self.config.get("max_recur_limit", 100))
+        self.propagator = Propagator(
+            max_recur_limit=self.config.get("max_recur_limit", 100),
+            asset_type=self._asset_type,
+            analysis_mode=self._analysis_mode,
+        )
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
@@ -138,8 +154,12 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph
+        if self._asset_type == "etf" and selected_analysts == ["market", "social", "news", "fundamentals"]:
+            selected_analysts = self.config.get(
+                "selected_etf_analysts", ["market", "flow", "news", "product"]
+            )
         self._selected_analysts = selected_analysts
-        self.graph = self.graph_setup.setup_graph(selected_analysts)
+        self.graph = self.graph_setup.setup_graph(selected_analysts, asset_type=self._asset_type)
 
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
@@ -165,6 +185,21 @@ class TradingAgentsGraph:
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
+        if self._asset_type == "etf":
+            return {
+                "market": ToolNode([get_etf_price_data, get_etf_indicators]),
+                "flow": ToolNode([get_etf_fund_flow]),
+                "news": ToolNode([get_etf_news]),
+                "product": ToolNode(
+                    [
+                        get_etf_profile,
+                        get_etf_holdings,
+                        get_etf_fund_flow,
+                        get_etf_discount_premium,
+                        get_etf_tracking_info,
+                    ]
+                ),
+            }
         return {
             "market": ToolNode(
                 [
@@ -238,7 +273,7 @@ class TradingAgentsGraph:
             self.conditional_logic,
             toolkit=None,
         )
-        self.graph = self.graph_setup.setup_graph(self._selected_analysts)
+        self.graph = self.graph_setup.setup_graph(self._selected_analysts, asset_type=self._asset_type)
 
     def propagate(self, company_name, trade_date, on_node=None):
         """Run the trading agents graph for a company on a specific date.
@@ -254,7 +289,10 @@ class TradingAgentsGraph:
 
         # Set market context for data routing (before any data fetching)
         market = detect_market(company_name)
+        if self._asset_type == "etf" and not is_supported_cn_etf(company_name):
+            raise ValueError("ETF mode currently supports only A-share exchange-traded ETF codes.")
         set_market_context(market)
+        set_asset_context(self._asset_type)
 
         # Rebuild graph with market-specific memories if needed
         self._rebuild_graph_for_market(market)
@@ -285,6 +323,7 @@ class TradingAgentsGraph:
                         for k in (
                             "market_report", "sentiment_report", "news_report",
                             "fundamentals_report", "china_market_report",
+                            "etf_market_report", "etf_flow_report", "etf_news_report", "etf_product_report",
                             "investment_plan", "trader_investment_plan",
                             "final_trade_decision",
                         )
@@ -334,11 +373,17 @@ class TradingAgentsGraph:
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
+            "asset_type": final_state.get("asset_type", self._asset_type),
+            "analysis_mode": final_state.get("analysis_mode", self._analysis_mode),
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
             "china_market_report": final_state.get("china_market_report", ""),
+            "etf_market_report": final_state.get("etf_market_report", ""),
+            "etf_flow_report": final_state.get("etf_flow_report", ""),
+            "etf_news_report": final_state.get("etf_news_report", ""),
+            "etf_product_report": final_state.get("etf_product_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],
@@ -416,10 +461,16 @@ class TradingAgentsGraph:
         filepath = report_dir / filename
 
         final_decision = str(final_state.get("final_trade_decision", "")).strip()
+        asset_type = final_state.get("asset_type", self._asset_type)
+        report_title = "ETF 分析报告" if asset_type == "etf" else "股票分析报告"
+        market_title = "ETF 市场分析报告" if asset_type == "etf" else "市场分析报告"
+        fundamentals_title = "ETF 产品分析报告" if asset_type == "etf" else "基本面分析报告"
+        news_title = "ETF 新闻分析报告" if asset_type == "etf" else "新闻分析报告"
+        sentiment_title = "ETF 资金流与情绪分析报告" if asset_type == "etf" else "社交情绪分析报告"
 
         # Build report sections
         lines = [
-            f"# 股票分析报告 — {ticker}",
+            f"# {report_title} — {ticker}",
             f"",
             f"- **分析日期**: {trade_date}",
             f"- **生成时间**: {_dt.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -443,10 +494,10 @@ class TradingAgentsGraph:
 
         # Phase 1: Analyst Reports
         report_sections = [
-            ("市场分析报告", "market_report"),
-            ("基本面分析报告", "fundamentals_report"),
-            ("新闻分析报告", "news_report"),
-            ("社交情绪分析报告", "sentiment_report"),
+            (market_title, "market_report"),
+            (fundamentals_title, "fundamentals_report"),
+            (news_title, "news_report"),
+            (sentiment_title, "sentiment_report"),
             ("中国市场分析报告", "china_market_report"),
         ]
         for title, key in report_sections:

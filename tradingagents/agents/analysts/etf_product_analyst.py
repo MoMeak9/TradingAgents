@@ -8,6 +8,7 @@ from tradingagents.agents.utils.etf_data_tools import (
     get_etf_tracking_info,
 )
 from tradingagents.agents.utils.etf_prompt_utils import build_etf_product_prompt
+from tradingagents.agents.utils.agent_states import apply_asset_report_mapping
 
 
 def create_etf_product_analyst(llm, toolkit=None):
@@ -32,10 +33,11 @@ def create_etf_product_analyst(llm, toolkit=None):
         chain = prompt | llm.bind_tools(tools)
         result = chain.invoke({"messages": state["messages"]})
         report = result.content if not getattr(result, "tool_calls", None) else ""
-        return {
+        update = {
             "messages": [result],
             "etf_product_report": report,
-            "fundamentals_report": report,
+            "product_tool_call_count": state.get("product_tool_call_count", 0) + 1,
         }
+        return apply_asset_report_mapping(update, "etf")
 
     return etf_product_analyst_node

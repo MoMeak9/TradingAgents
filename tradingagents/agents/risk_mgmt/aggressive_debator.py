@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 def create_aggressive_debator(llm):
     def aggressive_node(state) -> dict:
+        asset_type = state.get("asset_type", "stock")
         risk_debate_state = state["risk_debate_state"]
         history = risk_debate_state.get("history", "")
         aggressive_history = risk_debate_state.get("aggressive_history", "")
@@ -23,7 +24,23 @@ def create_aggressive_debator(llm):
 
         logger.info(f"Aggressive Analyst input data lengths: market={len(market_research_report)}, sentiment={len(sentiment_report)}, news={len(news_report)}, fundamentals={len(fundamentals_report)}, trader={len(trader_decision)}, history={len(history)}")
 
-        prompt = f"""作为激进风险分析师，您的职责是积极倡导高回报、高风险的投资机会，强调大胆策略和竞争优势。在评估交易员的决策或计划时，请重点关注潜在的上涨空间、增长潜力和创新收益——即使这些伴随着较高的风险。使用提供的市场数据和情绪分析来加强您的论点，并挑战对立观点。具体来说，请直接回应保守和中性分析师提出的每个观点，用数据驱动的反驳和有说服力的推理进行反击。突出他们的谨慎态度可能错过的关键机会，或者他们的假设可能过于保守的地方。以下是交易员的决策：
+        if asset_type == "etf":
+            prompt = f"""作为激进 ETF 风险分析师，您的职责是积极倡导高回报、高风险的 ETF 机会，强调主题贝塔、事件催化、资金推动和波段空间。请重点关注 ETF 的上行弹性，并直接回应保守和中性分析师对流动性、折溢价、跟踪误差、拥挤度的担忧。以下是交易员的决策：
+
+{trader_decision}
+
+请用以下资料为更激进的 ETF 交易/配置立场辩护：
+市场研究报告：{market_research_report}
+社交媒体情绪报告：{sentiment_report}
+最新世界事务报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+当前对话历史：{history}
+保守分析师最后论点：{current_conservative_response}
+中性分析师最后论点：{current_neutral_response}
+
+请用中文辩论式输出，强调为什么高风险视角在当前 ETF 环境下可能带来更优收益。"""
+        else:
+            prompt = f"""作为激进风险分析师，您的职责是积极倡导高回报、高风险的投资机会，强调大胆策略和竞争优势。在评估交易员的决策或计划时，请重点关注潜在的上涨空间、增长潜力和创新收益——即使这些伴随着较高的风险。使用提供的市场数据和情绪分析来加强您的论点，并挑战对立观点。具体来说，请直接回应保守和中性分析师提出的每个观点，用数据驱动的反驳和有说服力的推理进行反击。突出他们的谨慎态度可能错过的关键机会，或者他们的假设可能过于保守的地方。以下是交易员的决策：
 
 {trader_decision}
 

@@ -29,8 +29,8 @@ def create_bull_researcher(llm, memory):
         is_hk = market_info['is_hk']
         is_us = market_info['is_us']
 
-        # 获取公司名称
-        company_name = get_company_name(ticker, market_info['market'])
+        asset_type = state.get("asset_type", "stock")
+        company_name = get_company_name(ticker, market_info['market']) if asset_type != "etf" else f"ETF {ticker}"
 
         currency = market_info['currency']
         currency_symbol = market_info['currency_symbol']
@@ -51,7 +51,30 @@ def create_bull_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""你是一位看涨分析师，负责为股票 {company_name}（股票代码：{ticker}）的投资建立强有力的论证。
+        if asset_type == "etf":
+            prompt = f"""你是一位看涨分析师，负责为 A 股 ETF {company_name} 建立强有力的投资论证。
+
+⚠️ 当前分析对象是 ETF，不是上市公司。请重点讨论交易机会、配置价值、流动性、资金流、持仓暴露、主题或指数驱动因素。
+⚠️ 所有价格和风险分析请使用 {currency}（{currency_symbol}）作为单位。
+
+请用中文回答，重点关注以下几个方面：
+- 交易价值：短中期趋势、资金流、事件催化、技术结构
+- 配置价值：指数或主题暴露、长期持有逻辑、仓位适配性
+- 产品优势：流动性、持仓结构、份额变化、折溢价与跟踪质量
+- 反驳看跌观点：针对 ETF 风险、拥挤度、回撤担忧做出回应
+
+可用资源：
+ETF 市场报告：{market_research_report}
+ETF 资金流/情绪报告：{sentiment_report}
+ETF 新闻报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+辩论对话历史：{history}
+最后的看跌论点：{current_response}
+类似情况的反思和经验教训：{past_memory_str}
+
+请给出看涨论证，并明确区分这是更偏“交易机会”还是更偏“配置机会”。"""
+        else:
+            prompt = f"""你是一位看涨分析师，负责为股票 {company_name}（股票代码：{ticker}）的投资建立强有力的论证。
 
 ⚠️ 重要提醒：当前分析的是 {'中国A股' if is_china else '海外股票'}，所有价格和估值请使用 {currency}（{currency_symbol}）作为单位。
 ⚠️ 在你的分析中，请始终使用公司名称"{company_name}"而不是股票代码"{ticker}"来称呼这家公司。

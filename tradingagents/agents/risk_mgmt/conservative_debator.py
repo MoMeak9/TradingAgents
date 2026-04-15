@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 def create_conservative_debator(llm):
     def conservative_node(state) -> dict:
+        asset_type = state.get("asset_type", "stock")
         risk_debate_state = state["risk_debate_state"]
         history = risk_debate_state.get("history", "")
         conservative_history = risk_debate_state.get("conservative_history", "")
@@ -24,7 +25,23 @@ def create_conservative_debator(llm):
 
         logger.info(f"Conservative Analyst input data lengths: market={len(market_research_report)}, sentiment={len(sentiment_report)}, news={len(news_report)}, fundamentals={len(fundamentals_report)}, trader={len(trader_decision)}, history={len(history)}")
 
-        prompt = f"""作为安全/保守风险分析师，您的主要目标是保护资产、最小化波动性，并确保稳定、可靠的增长。您优先考虑稳定性、安全性和风险缓解，仔细评估潜在损失、经济衰退和市场波动。在评估交易员的决策或计划时，请批判性地审查高风险要素，指出决策可能使公司面临不当风险的地方，以及更谨慎的替代方案如何能够确保长期收益。以下是交易员的决策：
+        if asset_type == "etf":
+            prompt = f"""作为保守 ETF 风险分析师，您的目标是保护资产、控制回撤，并重点审查 ETF 的折溢价、跟踪误差、流动性和主题拥挤风险。以下是交易员的决策：
+
+{trader_decision}
+
+请直接回应激进和中性观点，并利用以下资料论证为什么 ETF 当前可能只适合轻仓、观望或暂不配置：
+市场研究报告：{market_research_report}
+社交媒体情绪报告：{sentiment_report}
+最新世界事务报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+当前对话历史：{history}
+激进分析师最后回应：{current_aggressive_response}
+中性分析师最后回应：{current_neutral_response}
+
+请用中文辩论式输出，明确指出 ETF 的核心下行风险。"""
+        else:
+            prompt = f"""作为安全/保守风险分析师，您的主要目标是保护资产、最小化波动性，并确保稳定、可靠的增长。您优先考虑稳定性、安全性和风险缓解，仔细评估潜在损失、经济衰退和市场波动。在评估交易员的决策或计划时，请批判性地审查高风险要素，指出决策可能使公司面临不当风险的地方，以及更谨慎的替代方案如何能够确保长期收益。以下是交易员的决策：
 
 {trader_decision}
 

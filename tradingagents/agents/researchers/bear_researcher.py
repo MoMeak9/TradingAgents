@@ -27,8 +27,8 @@ def create_bear_researcher(llm, memory):
         is_hk = market_info['is_hk']
         is_us = market_info['is_us']
 
-        # 获取公司名称
-        company_name = get_company_name(ticker, market_info['market'])
+        asset_type = state.get("asset_type", "stock")
+        company_name = get_company_name(ticker, market_info['market']) if asset_type != "etf" else f"ETF {ticker}"
 
         currency = market_info['currency']
         currency_symbol = market_info['currency_symbol']
@@ -46,7 +46,30 @@ def create_bear_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""你是一位看跌分析师，负责论证不投资股票 {company_name}（股票代码：{ticker}）的理由。
+        if asset_type == "etf":
+            prompt = f"""你是一位看跌分析师，负责论证当前不应配置或不应交易 A 股 ETF {company_name} 的理由。
+
+⚠️ 当前分析对象是 ETF，不是上市公司。请重点讨论 ETF 的拥挤交易、主题回撤、流动性、折溢价、跟踪误差和配置不适配风险。
+⚠️ 所有价格和风险分析请使用 {currency}（{currency_symbol}）作为单位。
+
+请用中文回答，重点关注以下几个方面：
+- 交易风险：短期回撤、热点退潮、事件透支、技术破位
+- 配置风险：暴露过度集中、长期持有逻辑不足、风格不匹配
+- 产品缺陷：流动性不足、份额流出、折溢价、跟踪偏离
+- 反驳看涨观点：指出看涨方对 ETF 交易性和配置性的乐观假设问题
+
+可用资源：
+ETF 市场报告：{market_research_report}
+ETF 资金流/情绪报告：{sentiment_report}
+ETF 新闻报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+辩论对话历史：{history}
+最后的看涨论点：{current_response}
+类似情况的反思和经验教训：{past_memory_str}
+
+请给出看跌论证，并明确说明这更像是“暂不交易”还是“暂不配置”的结论。"""
+        else:
+            prompt = f"""你是一位看跌分析师，负责论证不投资股票 {company_name}（股票代码：{ticker}）的理由。
 
 ⚠️ 重要提醒：当前分析的是 {market_info['market_name']}，所有价格和估值请使用 {currency}（{currency_symbol}）作为单位。
 ⚠️ 在你的分析中，请始终使用公司名称"{company_name}"而不是股票代码"{ticker}"来称呼这家公司。

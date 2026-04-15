@@ -58,6 +58,12 @@ class MessageBuffer:
         "news": "News Analyst",
         "fundamentals": "Fundamentals Analyst",
     }
+    ETF_ANALYST_MAPPING = {
+        "market": "ETF Market Analyst",
+        "flow": "ETF Flow Analyst",
+        "news": "ETF News Analyst",
+        "product": "ETF Product Analyst",
+    }
 
     # Report section mapping: section -> (analyst_key for filtering, finalizing_agent)
     # analyst_key: which analyst selection controls this section (None = always included)
@@ -67,6 +73,15 @@ class MessageBuffer:
         "sentiment_report": ("social", "Social Analyst"),
         "news_report": ("news", "News Analyst"),
         "fundamentals_report": ("fundamentals", "Fundamentals Analyst"),
+        "investment_plan": (None, "Research Manager"),
+        "trader_investment_plan": (None, "Trader"),
+        "final_trade_decision": (None, "Portfolio Manager"),
+    }
+    ETF_REPORT_SECTIONS = {
+        "market_report": ("market", "ETF Market Analyst"),
+        "sentiment_report": ("flow", "ETF Flow Analyst"),
+        "news_report": ("news", "ETF News Analyst"),
+        "fundamentals_report": ("product", "ETF Product Analyst"),
         "investment_plan": (None, "Research Manager"),
         "trader_investment_plan": (None, "Trader"),
         "final_trade_decision": (None, "Portfolio Manager"),
@@ -81,23 +96,32 @@ class MessageBuffer:
         self.current_agent = None
         self.report_sections = {}
         self.selected_analysts = []
+        self.asset_type = AssetType.STOCK.value
         self._last_message_id = None
 
-    def init_for_analysis(self, selected_analysts):
+    def _analyst_mapping(self):
+        return self.ETF_ANALYST_MAPPING if self.asset_type == AssetType.ETF.value else self.ANALYST_MAPPING
+
+    def _report_sections_map(self):
+        return self.ETF_REPORT_SECTIONS if self.asset_type == AssetType.ETF.value else self.REPORT_SECTIONS
+
+    def init_for_analysis(self, selected_analysts, asset_type=AssetType.STOCK.value):
         """Initialize agent status and report sections based on selected analysts.
 
         Args:
             selected_analysts: List of analyst type strings (e.g., ["market", "news"])
         """
+        self.asset_type = asset_type
         self.selected_analysts = [a.lower() for a in selected_analysts]
 
         # Build agent_status dynamically
         self.agent_status = {}
 
         # Add selected analysts
+        analyst_mapping = self._analyst_mapping()
         for analyst_key in self.selected_analysts:
-            if analyst_key in self.ANALYST_MAPPING:
-                self.agent_status[self.ANALYST_MAPPING[analyst_key]] = "pending"
+            if analyst_key in analyst_mapping:
+                self.agent_status[analyst_mapping[analyst_key]] = "pending"
 
         # Add fixed teams
         for team_agents in self.FIXED_AGENTS.values():
@@ -106,7 +130,7 @@ class MessageBuffer:
 
         # Build report_sections dynamically
         self.report_sections = {}
-        for section, (analyst_key, _) in self.REPORT_SECTIONS.items():
+        for section, (analyst_key, _) in self._report_sections_map().items():
             if analyst_key is None or analyst_key in self.selected_analysts:
                 self.report_sections[section] = None
 
@@ -129,9 +153,10 @@ class MessageBuffer:
         """
         count = 0
         for section in self.report_sections:
-            if section not in self.REPORT_SECTIONS:
+            report_sections = self._report_sections_map()
+            if section not in report_sections:
                 continue
-            _, finalizing_agent = self.REPORT_SECTIONS[section]
+            _, finalizing_agent = report_sections[section]
             # Report is complete if it has content AND its finalizing agent is done
             has_content = self.report_sections.get(section) is not None
             agent_done = self.agent_status.get(finalizing_agent) == "completed"
@@ -171,10 +196,10 @@ class MessageBuffer:
         if latest_section and latest_content:
             # Format the current section for display
             section_titles = {
-                "market_report": "Market Analysis",
-                "sentiment_report": "Social Sentiment",
-                "news_report": "News Analysis",
-                "fundamentals_report": "Fundamentals Analysis",
+                "market_report": "ETF Market Analysis" if self.asset_type == AssetType.ETF.value else "Market Analysis",
+                "sentiment_report": "ETF Flow Analysis" if self.asset_type == AssetType.ETF.value else "Social Sentiment",
+                "news_report": "ETF News Analysis" if self.asset_type == AssetType.ETF.value else "News Analysis",
+                "fundamentals_report": "ETF Product Analysis" if self.asset_type == AssetType.ETF.value else "Fundamentals Analysis",
                 "investment_plan": "Research Team Decision",
                 "trader_investment_plan": "Trading Team Plan",
                 "final_trade_decision": "Portfolio Management Decision",
@@ -195,19 +220,19 @@ class MessageBuffer:
             report_parts.append("## Analyst Team Reports")
             if self.report_sections.get("market_report"):
                 report_parts.append(
-                    f"### Market Analysis\n{self.report_sections['market_report']}"
+                    f"### {'ETF Market Analysis' if self.asset_type == AssetType.ETF.value else 'Market Analysis'}\n{self.report_sections['market_report']}"
                 )
             if self.report_sections.get("sentiment_report"):
                 report_parts.append(
-                    f"### Social Sentiment\n{self.report_sections['sentiment_report']}"
+                    f"### {'ETF Flow Analysis' if self.asset_type == AssetType.ETF.value else 'Social Sentiment'}\n{self.report_sections['sentiment_report']}"
                 )
             if self.report_sections.get("news_report"):
                 report_parts.append(
-                    f"### News Analysis\n{self.report_sections['news_report']}"
+                    f"### {'ETF News Analysis' if self.asset_type == AssetType.ETF.value else 'News Analysis'}\n{self.report_sections['news_report']}"
                 )
             if self.report_sections.get("fundamentals_report"):
                 report_parts.append(
-                    f"### Fundamentals Analysis\n{self.report_sections['fundamentals_report']}"
+                    f"### {'ETF Product Analysis' if self.asset_type == AssetType.ETF.value else 'Fundamentals Analysis'}\n{self.report_sections['fundamentals_report']}"
                 )
 
         # Research Team Reports
@@ -282,13 +307,23 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     progress_table.add_column("Status", style="yellow", justify="center", width=20)
 
     # Group agents by team - filter to only include agents in agent_status
-    all_teams = {
-        "Analyst Team": [
+    analyst_team = (
+        [
+            "ETF Market Analyst",
+            "ETF Flow Analyst",
+            "ETF News Analyst",
+            "ETF Product Analyst",
+        ]
+        if message_buffer.asset_type == AssetType.ETF.value
+        else [
             "Market Analyst",
             "Social Analyst",
             "News Analyst",
             "Fundamentals Analyst",
-        ],
+        ]
+    )
+    all_teams = {
+        "Analyst Team": analyst_team,
         "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
         "Trading Team": ["Trader"],
         "Risk Management": ["Aggressive Analyst", "Neutral Analyst", "Conservative Analyst"],
@@ -536,9 +571,9 @@ def get_user_selections():
             "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
         )
     )
-    selected_analysts = select_analysts()
+    selected_analysts = select_analysts(selected_asset_type.value)
     console.print(
-        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+        f"[green]Selected analysts:[/green] {', '.join(selected_analysts)}"
     )
 
     # Step 5: Research depth
@@ -668,19 +703,19 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
     if final_state.get("market_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "market.md").write_text(final_state["market_report"])
-        analyst_parts.append(("Market Analyst", final_state["market_report"]))
+        analyst_parts.append(("ETF Market Analyst" if final_state.get("asset_type") == "etf" else "Market Analyst", final_state["market_report"]))
     if final_state.get("sentiment_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"])
-        analyst_parts.append(("Social Analyst", final_state["sentiment_report"]))
+        analyst_parts.append(("ETF Flow Analyst" if final_state.get("asset_type") == "etf" else "Social Analyst", final_state["sentiment_report"]))
     if final_state.get("news_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "news.md").write_text(final_state["news_report"])
-        analyst_parts.append(("News Analyst", final_state["news_report"]))
+        analyst_parts.append(("ETF News Analyst" if final_state.get("asset_type") == "etf" else "News Analyst", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"])
-        analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        analyst_parts.append(("ETF Product Analyst" if final_state.get("asset_type") == "etf" else "Fundamentals Analyst", final_state["fundamentals_report"]))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
         sections.append(f"## I. Analyst Team Reports\n\n{content}")
@@ -755,13 +790,13 @@ def display_complete_report(final_state):
     # I. Analyst Team Reports
     analysts = []
     if final_state.get("market_report"):
-        analysts.append(("Market Analyst", final_state["market_report"]))
+        analysts.append(("ETF Market Analyst" if final_state.get("asset_type") == "etf" else "Market Analyst", final_state["market_report"]))
     if final_state.get("sentiment_report"):
-        analysts.append(("Social Analyst", final_state["sentiment_report"]))
+        analysts.append(("ETF Flow Analyst" if final_state.get("asset_type") == "etf" else "Social Analyst", final_state["sentiment_report"]))
     if final_state.get("news_report"):
-        analysts.append(("News Analyst", final_state["news_report"]))
+        analysts.append(("ETF News Analyst" if final_state.get("asset_type") == "etf" else "News Analyst", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
-        analysts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        analysts.append(("ETF Product Analyst" if final_state.get("asset_type") == "etf" else "Fundamentals Analyst", final_state["fundamentals_report"]))
     if analysts:
         console.print(Panel("[bold]I. Analyst Team Reports[/bold]", border_style="cyan"))
         for title, content in analysts:
@@ -816,18 +851,37 @@ def update_research_team_status(status):
 
 
 # Ordered list of analysts for status transitions
-ANALYST_ORDER = ["market", "social", "news", "fundamentals"]
-ANALYST_AGENT_NAMES = {
-    "market": "Market Analyst",
-    "social": "Social Analyst",
-    "news": "News Analyst",
-    "fundamentals": "Fundamentals Analyst",
+ANALYST_ORDER_BY_ASSET = {
+    AssetType.STOCK.value: ["market", "social", "news", "fundamentals"],
+    AssetType.ETF.value: ["market", "flow", "news", "product"],
 }
-ANALYST_REPORT_MAP = {
-    "market": "market_report",
-    "social": "sentiment_report",
-    "news": "news_report",
-    "fundamentals": "fundamentals_report",
+ANALYST_AGENT_NAMES_BY_ASSET = {
+    AssetType.STOCK.value: {
+        "market": "Market Analyst",
+        "social": "Social Analyst",
+        "news": "News Analyst",
+        "fundamentals": "Fundamentals Analyst",
+    },
+    AssetType.ETF.value: {
+        "market": "ETF Market Analyst",
+        "flow": "ETF Flow Analyst",
+        "news": "ETF News Analyst",
+        "product": "ETF Product Analyst",
+    },
+}
+ANALYST_REPORT_MAP_BY_ASSET = {
+    AssetType.STOCK.value: {
+        "market": "market_report",
+        "social": "sentiment_report",
+        "news": "news_report",
+        "fundamentals": "fundamentals_report",
+    },
+    AssetType.ETF.value: {
+        "market": "market_report",
+        "flow": "sentiment_report",
+        "news": "news_report",
+        "product": "fundamentals_report",
+    },
 }
 
 
@@ -841,14 +895,18 @@ def update_analyst_statuses(message_buffer, chunk):
     - When all analysts done, set Bull Researcher to in_progress
     """
     selected = message_buffer.selected_analysts
+    asset_type = message_buffer.asset_type
+    analyst_order = ANALYST_ORDER_BY_ASSET[asset_type]
+    analyst_names = ANALYST_AGENT_NAMES_BY_ASSET[asset_type]
+    analyst_report_map = ANALYST_REPORT_MAP_BY_ASSET[asset_type]
     found_active = False
 
-    for analyst_key in ANALYST_ORDER:
+    for analyst_key in analyst_order:
         if analyst_key not in selected:
             continue
 
-        agent_name = ANALYST_AGENT_NAMES[analyst_key]
-        report_key = ANALYST_REPORT_MAP[analyst_key]
+        agent_name = analyst_names[analyst_key]
+        report_key = analyst_report_map[analyst_key]
         has_report = bool(chunk.get(report_key))
 
         if has_report:
@@ -961,8 +1019,10 @@ def run_analysis():
     stats_handler = StatsCallbackHandler()
 
     # Normalize analyst selection to predefined order (selection is a 'set', order is fixed)
-    selected_set = {analyst.value for analyst in selections["analysts"]}
-    selected_analyst_keys = [a for a in ANALYST_ORDER if a in selected_set]
+    selected_set = set(selections["analysts"])
+    selected_analyst_keys = [
+        a for a in ANALYST_ORDER_BY_ASSET[selections["asset_type"]] if a in selected_set
+    ]
 
     # Initialize the graph with callbacks bound to LLMs
     graph = TradingAgentsGraph(
@@ -973,7 +1033,7 @@ def run_analysis():
     )
 
     # Initialize message buffer with selected analysts
-    message_buffer.init_for_analysis(selected_analyst_keys)
+    message_buffer.init_for_analysis(selected_analyst_keys, asset_type=selections["asset_type"])
 
     # Track start time for elapsed display
     start_time = time.time()
@@ -1039,12 +1099,12 @@ def run_analysis():
         )
         message_buffer.add_message(
             "System",
-            f"Selected analysts: {', '.join(analyst.value for analyst in selections['analysts'])}",
+            f"Selected analysts: {', '.join(selections['analysts'])}",
         )
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
         # Update agent status to in_progress for the first analyst
-        first_analyst = f"{selections['analysts'][0].value.capitalize()} Analyst"
+        first_analyst = ANALYST_AGENT_NAMES_BY_ASSET[selections["asset_type"]][selected_analyst_keys[0]]
         message_buffer.update_agent_status(first_analyst, "in_progress")
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
