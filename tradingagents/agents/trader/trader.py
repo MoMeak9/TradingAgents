@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 def create_trader(llm, memory):
     def trader_node(state, name):
         company_name = state["company_of_interest"]
+        asset_type = state.get("asset_type", "stock")
         investment_plan = state["investment_plan"]
         market_research_report = state["market_report"]
         sentiment_report = state["sentiment_report"]
@@ -43,15 +44,43 @@ def create_trader(llm, memory):
             past_memories = []
             past_memory_str = "暂无历史记忆数据可参考。"
 
-        context = {
-            "role": "user",
-            "content": f"Based on a comprehensive analysis by a team of analysts, here is an investment plan tailored for {company_name}. This plan incorporates insights from current technical market trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation for evaluating your next trading decision.\n\nProposed Investment Plan: {investment_plan}\n\nLeverage these insights to make an informed and strategic decision.",
-        }
+        if asset_type == "etf":
+            context = {
+                "role": "user",
+                "content": f"基于多位 ETF 分析师的综合结论，这里有一份面向 {company_name} 的 ETF 投资计划。请在此基础上给出明确的交易建议和配置建议。\n\nETF 投资计划：{investment_plan}\n\n请区分短中期交易机会与中期配置适配性。",
+            }
+        else:
+            context = {
+                "role": "user",
+                "content": f"Based on a comprehensive analysis by a team of analysts, here is an investment plan tailored for {company_name}. This plan incorporates insights from current technical market trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation for evaluating your next trading decision.\n\nProposed Investment Plan: {investment_plan}\n\nLeverage these insights to make an informed and strategic decision.",
+            }
 
-        messages = [
-            {
-                "role": "system",
-                "content": f"""您是一位专业的交易员，负责分析市场数据并做出投资决策。基于您的分析，请提供具体的买入、卖出或持有建议。
+        if asset_type == "etf":
+            system_content = f"""您是一位专业的 ETF 交易员，负责分析 ETF 市场数据并做出投资与配置决策。
+
+⚠️ 当前分析对象是 ETF {company_name}，而不是上市公司。
+⚠️ 请使用 {currency}（{currency_symbol}）作为价格单位。
+
+请在输出中同时包含：
+1. **交易建议**：买入/持有/卖出
+2. **交易目标价位**：必须给出具体数值
+3. **止损或失效条件**
+4. **配置建议**：适合配置/暂不配置/仅适合波段
+5. **建议仓位区间**
+6. **置信度** 与 **风险评分**
+7. **详细推理**
+
+特别注意：
+- 需要明确区分“交易机会”和“配置价值”
+- 重点参考 ETF 产品报告中的持仓结构、流动性、份额变化、折溢价、跟踪信息
+- 禁止使用上市公司财报视角做推理
+- 最终必须出现“交易建议：”和“配置建议：”
+
+请用中文输出，并以 `最终交易建议: **买入/持有/卖出**` 结束。
+
+类似情况下的交易反思和经验教训：{past_memory_str}"""
+        else:
+            system_content = f"""您是一位专业的交易员，负责分析市场数据并做出投资决策。基于您的分析，请提供具体的买入、卖出或持有建议。
 
 ⚠️ 重要提醒：当前分析的股票代码是 {company_name}，请使用正确的货币单位：{currency}（{currency_symbol}）
 
@@ -87,7 +116,12 @@ def create_trader(llm, memory):
 
 请用中文撰写分析内容，并始终以'最终交易建议: **买入/持有/卖出**'结束您的回应以确认您的建议。
 
-请不要忘记利用过去决策的经验教训来避免重复错误。以下是类似情况下的交易反思和经验教训: {past_memory_str}""",
+请不要忘记利用过去决策的经验教训来避免重复错误。以下是类似情况下的交易反思和经验教训: {past_memory_str}"""
+
+        messages = [
+            {
+                "role": "system",
+                "content": system_content,
             },
             context,
         ]

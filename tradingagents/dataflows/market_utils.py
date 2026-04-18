@@ -7,6 +7,8 @@ from datetime import datetime
 
 import pandas as pd
 
+ETF_CODE_PREFIXES = ("51", "52", "56", "58", "15", "16")
+
 
 def detect_market(symbol: str) -> str:
     """
@@ -73,6 +75,17 @@ def normalize_symbol(symbol: str, market: str) -> str:
     return s.upper()
 
 
+def is_etf(symbol: str) -> bool:
+    """Detect whether a CN symbol matches common A-share ETF code prefixes."""
+    normalized = normalize_symbol(symbol, "cn")
+    return len(normalized) == 6 and normalized.isdigit() and normalized.startswith(ETF_CODE_PREFIXES)
+
+
+def is_supported_cn_etf(symbol: str) -> bool:
+    """First-pass eligibility check for the A-share ETF scope in phase 1."""
+    return detect_market(symbol) == "cn" and is_etf(symbol)
+
+
 def get_exchange(symbol: str) -> str:
     """
     Determine A-share exchange from stock code.
@@ -86,6 +99,9 @@ def get_exchange(symbol: str) -> str:
     normalized = normalize_symbol(symbol, "cn")
     if not normalized:
         return "SZ"
+
+    if is_etf(normalized):
+        return "SH" if normalized.startswith(("51", "52", "56", "58")) else "SZ"
 
     first = normalized[0]
     if first in ("6", "9"):
@@ -133,6 +149,7 @@ def get_market_info(symbol: str) -> dict:
             "exchange": exchange,
             "currency": "CNY",
             "language": "zh",
+            "is_etf": is_etf(normalized),
             "symbol_normalized": normalized,
             "symbol_display": f"{normalized}.{exchange}",
         }
@@ -144,6 +161,7 @@ def get_market_info(symbol: str) -> dict:
             "exchange": "HKG",
             "currency": "HKD",
             "language": "zh",
+            "is_etf": False,
             "symbol_normalized": normalized,
             "symbol_display": normalized,
         }
@@ -154,6 +172,7 @@ def get_market_info(symbol: str) -> dict:
         "exchange": "",
         "currency": "USD",
         "language": "en",
+        "is_etf": False,
         "symbol_normalized": normalized,
         "symbol_display": normalized,
     }

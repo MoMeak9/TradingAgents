@@ -3,15 +3,22 @@ from typing import List, Optional, Tuple, Dict
 
 from rich.console import Console
 
-from cli.models import AnalystType
+from cli.models import AnalystType, AssetType
 
 console = Console()
 
-ANALYST_ORDER = [
-    ("Market Analyst", AnalystType.MARKET),
-    ("Social Media Analyst", AnalystType.SOCIAL),
-    ("News Analyst", AnalystType.NEWS),
-    ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
+STOCK_ANALYST_ORDER = [
+    ("Market Analyst", AnalystType.MARKET.value),
+    ("Social Media Analyst", AnalystType.SOCIAL.value),
+    ("News Analyst", AnalystType.NEWS.value),
+    ("Fundamentals Analyst", AnalystType.FUNDAMENTALS.value),
+]
+
+ETF_ANALYST_ORDER = [
+    ("ETF Market Analyst", "market"),
+    ("ETF Flow Analyst", "flow"),
+    ("ETF News Analyst", "news"),
+    ("ETF Product Analyst", "product"),
 ]
 
 
@@ -68,12 +75,13 @@ def get_analysis_date() -> str:
     return date.strip()
 
 
-def select_analysts() -> List[AnalystType]:
+def select_analysts(asset_type: str = AssetType.STOCK.value) -> List[str]:
     """Select analysts using an interactive checkbox."""
+    analyst_order = ETF_ANALYST_ORDER if asset_type == AssetType.ETF.value else STOCK_ANALYST_ORDER
     choices = questionary.checkbox(
         "Select Your [Analysts Team]:",
         choices=[
-            questionary.Choice(display, value=value) for display, value in ANALYST_ORDER
+            questionary.Choice(display, value=value) for display, value in analyst_order
         ],
         instruction="\n- Press Space to select/unselect analysts\n- Press 'a' to select/unselect all\n- Press Enter when done",
         validate=lambda x: len(x) > 0 or "You must select at least one analyst.",

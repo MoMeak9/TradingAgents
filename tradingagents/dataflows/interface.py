@@ -39,6 +39,21 @@ from .akshare_news import (
     get_global_news as get_akshare_global_news,
 )
 
+try:
+    from .akshare_etf import (
+        get_etf_price_data as get_akshare_etf_price_data,
+        get_etf_indicators as get_akshare_etf_indicators,
+        get_etf_profile as get_akshare_etf_profile,
+        get_etf_holdings as get_akshare_etf_holdings,
+        get_etf_fund_flow as get_akshare_etf_fund_flow,
+        get_etf_discount_premium as get_akshare_etf_discount_premium,
+        get_etf_tracking_info as get_akshare_etf_tracking_info,
+        get_etf_news as get_akshare_etf_news,
+    )
+    _AKSHARE_ETF_AVAILABLE = True
+except ImportError:
+    _AKSHARE_ETF_AVAILABLE = False
+
 # Tushare vendor imports (primary for A-share, optional: requires tushare package)
 try:
     import tushare as _tushare_check  # verify the package is actually installed
@@ -58,11 +73,33 @@ except ImportError:
     _TUSHARE_AVAILABLE = False
     TushareError = Exception  # fallback so references don't break
 
+_TUSHARE_ETF_AVAILABLE = False
+if _TUSHARE_AVAILABLE:
+    try:
+        from .tushare_etf import (
+            get_etf_price_data as get_tushare_etf_price_data,
+            get_etf_indicators as get_tushare_etf_indicators,
+            get_etf_profile as get_tushare_etf_profile,
+            get_etf_holdings as get_tushare_etf_holdings,
+            get_etf_fund_flow as get_tushare_etf_fund_flow,
+            get_etf_discount_premium as get_tushare_etf_discount_premium,
+            get_etf_tracking_info as get_tushare_etf_tracking_info,
+            get_etf_news as get_tushare_etf_news,
+        )
+        _TUSHARE_ETF_AVAILABLE = True
+    except ImportError:
+        pass
+
 # Market detection
-from .market_utils import detect_market, normalize_symbol, normalize_hk_symbol
+from .market_utils import (
+    detect_market,
+    normalize_symbol,
+    normalize_hk_symbol,
+    is_supported_cn_etf,
+)
 
 # Configuration and routing logic
-from .config import get_config, get_market_context
+from .config import get_config, get_market_context, get_asset_context
 
 # BaoStock vendor imports (optional, requires baostock package)
 try:
@@ -132,6 +169,27 @@ TOOLS_CATEGORIES = {
     }
 }
 
+ETF_TOOLS_CATEGORIES = {
+    "etf_price_data": {
+        "description": "ETF OHLCV and trading data",
+        "tools": ["get_etf_price_data", "get_etf_indicators"],
+    },
+    "etf_product_data": {
+        "description": "ETF profile, holdings, tracking, and premium data",
+        "tools": [
+            "get_etf_profile",
+            "get_etf_holdings",
+            "get_etf_fund_flow",
+            "get_etf_discount_premium",
+            "get_etf_tracking_info",
+        ],
+    },
+    "etf_news_data": {
+        "description": "ETF-relevant news data",
+        "tools": ["get_etf_news"],
+    },
+}
+
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
@@ -139,6 +197,11 @@ VENDOR_LIST = [
     "tushare",
     "baostock",
     "hk",
+]
+
+ETF_VENDOR_LIST = [
+    "tushare",
+    "akshare",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -215,9 +278,47 @@ VENDOR_METHODS = {
     },
 }
 
+ETF_VENDOR_METHODS = {
+    "get_etf_price_data": {
+        **({"tushare": get_tushare_etf_price_data} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_price_data} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_indicators": {
+        **({"tushare": get_tushare_etf_indicators} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_indicators} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_profile": {
+        **({"tushare": get_tushare_etf_profile} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_profile} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_holdings": {
+        **({"tushare": get_tushare_etf_holdings} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_holdings} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_fund_flow": {
+        **({"tushare": get_tushare_etf_fund_flow} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_fund_flow} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_discount_premium": {
+        **({"tushare": get_tushare_etf_discount_premium} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_discount_premium} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_tracking_info": {
+        **({"tushare": get_tushare_etf_tracking_info} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_tracking_info} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+    "get_etf_news": {
+        **({"tushare": get_tushare_etf_news} if _TUSHARE_ETF_AVAILABLE else {}),
+        **({"akshare": get_akshare_etf_news} if _AKSHARE_ETF_AVAILABLE else {}),
+    },
+}
+
 def get_category_for_method(method: str) -> str:
     """Get the category that contains the specified method."""
     for category, info in TOOLS_CATEGORIES.items():
+        if method in info["tools"]:
+            return category
+    for category, info in ETF_TOOLS_CATEGORIES.items():
         if method in info["tools"]:
             return category
     raise ValueError(f"Method '{method}' not found in any category")
@@ -268,6 +369,30 @@ def get_vendor_hk(category: str, method: str = None) -> str:
     # Fall back to HK category-level configuration
     return config.get("hk_data_vendors", {}).get(category, "yfinance")
 
+
+def get_vendor_etf(category: str, method: str = None) -> str:
+    """Get the configured vendor for ETF data categories or specific ETF tools."""
+    config = get_config()
+
+    if method:
+        etf_tool_vendors = config.get("etf_tool_vendors", {})
+        if method in etf_tool_vendors:
+            return etf_tool_vendors[method]
+
+    return config.get("etf_data_vendors", {}).get(category, "tushare,akshare")
+
+
+def _detect_asset_for_route(kwargs) -> str:
+    """Detect asset type from explicit kwargs, thread-local context, or config."""
+    if "asset_type" in kwargs and kwargs["asset_type"]:
+        return str(kwargs["asset_type"]).lower()
+
+    asset_context = get_asset_context()
+    if asset_context:
+        return str(asset_context).lower()
+
+    return str(get_config().get("asset_type", "stock")).lower()
+
 def _detect_market_for_route(method: str, args, kwargs) -> str:
     """Detect market from the method call arguments."""
     if method in _NON_SYMBOL_METHODS:
@@ -286,8 +411,60 @@ def _detect_market_for_route(method: str, args, kwargs) -> str:
 
     return detect_market(str(symbol))
 
+
+def _route_etf_vendor(method: str, *args, **kwargs):
+    """Route ETF method calls to ETF-specific vendor implementations."""
+    if method not in ETF_VENDOR_METHODS:
+        return f"Error: ETF method '{method}' not supported."
+
+    symbol = ""
+    if method not in _NON_SYMBOL_METHODS:
+        if args:
+            symbol = str(args[0])
+        else:
+            symbol = str(kwargs.get("symbol", kwargs.get("ticker", "")))
+
+    if symbol and not is_supported_cn_etf(symbol):
+        return "Error: ETF mode currently supports only A-share exchange-traded ETFs."
+
+    category = get_category_for_method(method)
+    vendor_config = get_vendor_etf(category, method)
+    primary_vendors = [v.strip() for v in vendor_config.split(",") if v.strip()]
+
+    if method not in ETF_VENDOR_METHODS:
+        return f"Error: ETF method '{method}' not supported."
+
+    if method not in _NON_SYMBOL_METHODS and args:
+        normalized = normalize_symbol(str(args[0]), "cn")
+        args = (normalized,) + args[1:]
+
+    all_available_vendors = list(ETF_VENDOR_METHODS[method].keys())
+    fallback_vendors = primary_vendors.copy()
+    for vendor in all_available_vendors:
+        if vendor not in fallback_vendors:
+            fallback_vendors.append(vendor)
+
+    last_error = None
+    for vendor in fallback_vendors:
+        if vendor not in ETF_VENDOR_METHODS[method]:
+            continue
+
+        impl_func = ETF_VENDOR_METHODS[method][vendor]
+        try:
+            return impl_func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            continue
+
+    return f"Error: All ETF data vendors failed for '{method}'. Last error: {last_error}"
+
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with market-aware fallback."""
+    asset_type = _detect_asset_for_route(kwargs)
+
+    if asset_type == "etf" and method in ETF_VENDOR_METHODS:
+        return _route_etf_vendor(method, *args, **kwargs)
+
     # Detect market from symbol
     market = _detect_market_for_route(method, args, kwargs)
 

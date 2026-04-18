@@ -9,12 +9,13 @@ def create_risk_manager(llm, memory):
     def risk_manager_node(state) -> dict:
 
         company_name = state["company_of_interest"]
+        asset_type = state.get("asset_type", "stock")
 
         history = state["risk_debate_state"]["history"]
         risk_debate_state = state["risk_debate_state"]
         market_research_report = state["market_report"]
         news_report = state["news_report"]
-        fundamentals_report = state["news_report"]
+        fundamentals_report = state["fundamentals_report"]
         sentiment_report = state["sentiment_report"]
         trader_plan = state["investment_plan"]
 
@@ -31,7 +32,38 @@ def create_risk_manager(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""作为风险管理委员会主席和辩论主持人，您的目标是评估三位风险分析师——激进、中性和安全/保守——之间的辩论，并确定交易员的最佳行动方案。您的决策必须产生明确的建议：买入、卖出或持有。只有在有具体论据强烈支持时才选择持有，而不是在所有方面都似乎有效时作为后备选择。力求清晰和果断。
+        if asset_type == "etf":
+            prompt = f"""作为 ETF 风险管理委员会主席和辩论主持人，您的目标是评估三位风险分析师——激进、中性和安全/保守——之间的辩论，并确定 ETF 的最佳行动方案。
+
+您必须同时裁决：
+- 交易建议：买入、卖出或持有
+- 配置建议：适合配置、暂不配置或仅适合波段
+
+请重点关注 ETF 特有风险：
+- 跟踪误差
+- 折溢价
+- 流动性
+- 主题拥挤与回撤
+- 行业/商品暴露集中度
+
+决策指导原则：
+1. 总结每位风险分析师最有价值的 ETF 风险观点
+2. 明确说明交易风险与配置风险是否一致
+3. 从交易员的原始计划 **{trader_plan}** 出发，结合风险辩论做修正
+4. 利用过去反思 **{past_memory_str}** 避免重复误判
+
+综合报告：
+ETF 市场报告：{market_research_report}
+ETF 资金流/情绪报告：{sentiment_report}
+ETF 新闻报告：{news_report}
+ETF 产品报告：{fundamentals_report}
+
+风险辩论历史：
+{history}
+
+请用中文输出，并明确写出“交易建议：”和“配置建议：”。"""
+        else:
+            prompt = f"""作为风险管理委员会主席和辩论主持人，您的目标是评估三位风险分析师——激进、中性和安全/保守——之间的辩论，并确定交易员的最佳行动方案。您的决策必须产生明确的建议：买入、卖出或持有。只有在有具体论据强烈支持时才选择持有，而不是在所有方面都似乎有效时作为后备选择。力求清晰和果断。
 
 决策指导原则：
 1. **总结关键论点**：提取每位分析师的最强观点，重点关注与背景的相关性。

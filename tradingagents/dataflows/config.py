@@ -8,6 +8,7 @@ _config: Optional[Dict] = None
 
 # Thread-safe market context for the current analysis run
 _market_context = threading.local()
+_asset_context = threading.local()
 
 
 def set_market_context(market: str):
@@ -18,6 +19,16 @@ def set_market_context(market: str):
 def get_market_context() -> str:
     """Get the current market context. Defaults to 'us'."""
     return getattr(_market_context, "market", "us")
+
+
+def set_asset_context(asset_type: str):
+    """Set the current asset context (stock or etf)."""
+    _asset_context.asset_type = asset_type
+
+
+def get_asset_context() -> str:
+    """Get the current asset context. Defaults to stock mode."""
+    return getattr(_asset_context, "asset_type", "stock")
 
 
 def initialize_config():

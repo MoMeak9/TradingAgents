@@ -7,6 +7,10 @@ from .analysts.market_analyst import create_market_analyst
 from .analysts.news_analyst import create_news_analyst
 from .analysts.social_media_analyst import create_social_media_analyst
 from .analysts.china_market_analyst import create_china_market_analyst
+from .analysts.etf_market_analyst import create_etf_market_analyst
+from .analysts.etf_product_analyst import create_etf_product_analyst
+from .analysts.etf_news_analyst import create_etf_news_analyst
+from .analysts.etf_flow_analyst import create_etf_flow_analyst
 
 from .researchers.bear_researcher import create_bear_researcher
 from .researchers.bull_researcher import create_bull_researcher
@@ -38,5 +42,9 @@ __all__ = [
     "create_conservative_debator",
     "create_social_media_analyst",
     "create_china_market_analyst",
+    "create_etf_market_analyst",
+    "create_etf_product_analyst",
+    "create_etf_news_analyst",
+    "create_etf_flow_analyst",
     "create_trader",
 ]
