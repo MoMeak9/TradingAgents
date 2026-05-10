@@ -4,6 +4,7 @@ import time
 import json
 
 from tradingagents.agents.utils.market_router import get_market_info, get_company_name
+from tradingagents.agents.utils.agent_utils import truncate_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,11 @@ def create_bear_researcher(llm, memory):
 
         currency = market_info['currency']
         currency_symbol = market_info['currency_symbol']
+
+        market_research_report = truncate_for_prompt(market_research_report)
+        sentiment_report = truncate_for_prompt(sentiment_report)
+        news_report = truncate_for_prompt(news_report)
+        fundamentals_report = truncate_for_prompt(fundamentals_report)
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
 

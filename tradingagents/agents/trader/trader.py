@@ -4,6 +4,7 @@ import time
 import json
 
 from tradingagents.agents.utils.market_router import get_market_info, get_company_name
+from tradingagents.agents.utils.agent_utils import truncate_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,12 @@ def create_trader(llm, memory):
 
         logger.debug(f"Trader node started for {company_name}, market: {market_info['market_name']}, currency: {currency}")
         logger.debug(f"Fundamentals report length: {len(fundamentals_report)}")
+
+        market_research_report = truncate_for_prompt(market_research_report)
+        sentiment_report = truncate_for_prompt(sentiment_report)
+        news_report = truncate_for_prompt(news_report)
+        fundamentals_report = truncate_for_prompt(fundamentals_report)
+        investment_plan = truncate_for_prompt(investment_plan, max_chars=2200)
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
 

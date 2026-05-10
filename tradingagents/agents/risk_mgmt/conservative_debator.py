@@ -2,6 +2,7 @@ from langchain_core.messages import AIMessage
 import logging
 import time
 import json
+from tradingagents.agents.utils.agent_utils import truncate_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,11 @@ def create_conservative_debator(llm):
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
 
-        trader_decision = state["trader_investment_plan"]
+        market_research_report = truncate_for_prompt(market_research_report)
+        sentiment_report = truncate_for_prompt(sentiment_report)
+        news_report = truncate_for_prompt(news_report)
+        fundamentals_report = truncate_for_prompt(fundamentals_report)
+        trader_decision = truncate_for_prompt(state["trader_investment_plan"], max_chars=2200)
 
         logger.info(f"Conservative Analyst input data lengths: market={len(market_research_report)}, sentiment={len(sentiment_report)}, news={len(news_report)}, fundamentals={len(fundamentals_report)}, trader={len(trader_decision)}, history={len(history)}")
 

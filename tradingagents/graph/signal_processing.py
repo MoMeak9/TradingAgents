@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 class SignalProcessor:
     """Processes trading signals to extract actionable decisions."""
 
+    _ACTION_MAP = {
+        'buy': '买入',
+        'hold': '持有',
+        'sell': '卖出',
+        'BUY': '买入',
+        'HOLD': '持有',
+        'SELL': '卖出',
+        '购买': '买入',
+        '保持': '持有',
+        '出售': '卖出',
+        'purchase': '买入',
+        'keep': '持有',
+        'dispose': '卖出',
+    }
+
     def __init__(self, quick_thinking_llm: ChatOpenAI):
         """Initialize with an LLM for processing."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -119,17 +134,8 @@ class SignalProcessor:
                 decision_data = json.loads(json_text)
 
                 # 验证和标准化数据
-                action = decision_data.get('action', '持有')
-                if action not in ['买入', '持有', '卖出']:
-                    # 尝试映射英文和其他变体
-                    action_map = {
-                        'buy': '买入', 'hold': '持有', 'sell': '卖出',
-                        'BUY': '买入', 'HOLD': '持有', 'SELL': '卖出',
-                        '购买': '买入', '保持': '持有', '出售': '卖出',
-                        'purchase': '买入', 'keep': '持有', 'dispose': '卖出'
-                    }
-                    action = action_map.get(action, '持有')
-                    if action != decision_data.get('action', '持有'):
+                action = self._normalize_action(decision_data.get('action', '持有'))
+                if action != decision_data.get('action', '持有'):
                         logger.debug(f"[SignalProcessor] 投资建议映射: {decision_data.get('action')} -> {action}")
 
                 # 处理目标价格，确保正确提取
@@ -139,33 +145,9 @@ class SignalProcessor:
                     reasoning = decision_data.get('reasoning', '')
                     full_text = f"{reasoning} {full_signal}"  # 扩大搜索范围
 
-                    # 增强的价格匹配模式
-                    price_patterns = [
-                        r'目标价[位格]?[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',  # 目标价位: 45.50
-                        r'目标[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 目标: 45.50
-                        r'价格[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 价格: 45.50
-                        r'价位[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 价位: 45.50
-                        r'合理[价位格]?[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)', # 合理价位: 45.50
-                        r'估值[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 估值: 45.50
-                        r'[¥\$](\d+(?:\.\d+)?)',                      # ¥45.50 或 $190
-                        r'(\d+(?:\.\d+)?)元',                         # 45.50元
-                        r'(\d+(?:\.\d+)?)美元',                       # 190美元
-                        r'建议[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',        # 建议: 45.50
-                        r'预期[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',        # 预期: 45.50
-                        r'看[到至]\s*[¥\$]?(\d+(?:\.\d+)?)',          # 看到45.50
-                        r'上涨[到至]\s*[¥\$]?(\d+(?:\.\d+)?)',        # 上涨到45.50
-                        r'(\d+(?:\.\d+)?)\s*[¥\$]',                  # 45.50¥
-                    ]
-
-                    for pattern in price_patterns:
-                        price_match = re.search(pattern, full_text, re.IGNORECASE)
-                        if price_match:
-                            try:
-                                target_price = float(price_match.group(1))
-                                logger.debug(f"[SignalProcessor] 从文本中提取到目标价格: {target_price} (模式: {pattern})")
-                                break
-                            except (ValueError, IndexError):
-                                continue
+                    target_price = self._extract_target_price(full_text)
+                    if target_price is not None:
+                        logger.debug(f"[SignalProcessor] 从文本中提取到目标价格: {target_price}")
 
                     # 如果仍然没有找到价格，尝试智能推算
                     if target_price is None or target_price == "null" or target_price == "":
@@ -215,10 +197,11 @@ class SignalProcessor:
 
         # 提取当前价格
         current_price_patterns = [
-            r'当前价[格位]?[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',
-            r'现价[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',
-            r'股价[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',
-            r'价格[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',
+            r'当前价[格位]?[^0-9]{0,12}(\d+(?:\.\d+)?)',
+            r'现价[^0-9]{0,12}(\d+(?:\.\d+)?)',
+            r'股价[^0-9]{0,12}(\d+(?:\.\d+)?)',
+            r'价格[^0-9]{0,12}(\d+(?:\.\d+)?)',
+            r'收盘价[^0-9]{0,12}(\d+(?:\.\d+)?)',
         ]
 
         for pattern in current_price_patterns:
@@ -273,33 +256,10 @@ class SignalProcessor:
     def _extract_simple_decision(self, text: str) -> dict:
         """简单的决策提取方法作为备用"""
         # 提取动作
-        action = '持有'  # 默认
-        if re.search(r'买入|BUY', text, re.IGNORECASE):
-            action = '买入'
-        elif re.search(r'卖出|SELL', text, re.IGNORECASE):
-            action = '卖出'
-        elif re.search(r'持有|HOLD', text, re.IGNORECASE):
-            action = '持有'
+        action = self._extract_action(text)
 
         # 尝试提取目标价格（使用增强的模式）
-        target_price = None
-        price_patterns = [
-            r'目标价[位格]?[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',  # 目标价位: 45.50
-            r'\*\*目标价[位格]?\*\*[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',  # **目标价位**: 45.50
-            r'目标[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 目标: 45.50
-            r'价格[：:]?\s*[¥\$]?(\d+(?:\.\d+)?)',         # 价格: 45.50
-            r'[¥\$](\d+(?:\.\d+)?)',                      # ¥45.50 或 $190
-            r'(\d+(?:\.\d+)?)元',                         # 45.50元
-        ]
-
-        for pattern in price_patterns:
-            price_match = re.search(pattern, text)
-            if price_match:
-                try:
-                    target_price = float(price_match.group(1))
-                    break
-                except ValueError:
-                    continue
+        target_price = self._extract_target_price(text)
 
         # 如果没有找到价格，尝试智能推算
         if target_price is None:
@@ -324,3 +284,121 @@ class SignalProcessor:
             'risk_score': 0.5,
             'reasoning': '输入数据无效，默认持有建议'
         }
+
+    def _normalize_action(self, action: str) -> str:
+        normalized = str(action or '持有').strip()
+        if normalized in ['买入', '持有', '卖出']:
+            return normalized
+        return self._ACTION_MAP.get(normalized, '持有')
+
+    def _extract_action(self, text: str) -> str:
+        """优先从结论区域抽取动作，避免被正文中相反观点干扰。"""
+        for section in self._candidate_sections(text):
+            for pattern in [
+                r'(?:明确建议|最终交易建议|最终建议|最终裁决|主席裁决|裁决|投资建议|操作建议|结论)[^\n：:]{0,20}[：:]\s*(?:\*\*)?(买入|持有|卖出)(?:\*\*)?',
+                r'结论要果断[^\n。]{0,30}(买入|持有|卖出)',
+                r'现在最优行动是(买入|持有|卖出)',
+                r'(?:不买入、不新买|不主动加仓|不买)\b',
+            ]:
+                matches = re.findall(pattern, section, re.IGNORECASE)
+                if matches:
+                    last_match = matches[-1]
+                    if isinstance(last_match, tuple):
+                        last_match = next((m for m in reversed(last_match) if m), '持有')
+                    if last_match == '不买':
+                        return '卖出'
+                    return self._normalize_action(last_match)
+
+        if re.search(r'卖出|SELL', text, re.IGNORECASE):
+            return '卖出'
+        if re.search(r'持有|HOLD', text, re.IGNORECASE):
+            return '持有'
+        if re.search(r'买入|BUY', text, re.IGNORECASE):
+            return '买入'
+        return '持有'
+
+    def _extract_target_price(self, text: str) -> float | None:
+        """提取显式目标价，过滤 EPS/ROE 等指标数值。"""
+        price_patterns = [
+            r'目标价[位格]?[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'\*\*目标价[位格]?\*\*[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'目标价格[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'目标[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'合理[价位格]?[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'预期[价位格]?[：:]?\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'看[到至]\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+            r'上涨[到至]\s*[¥\$￥]?\s*(\d+(?:\.\d+)?)',
+        ]
+
+        for section in self._candidate_sections(text):
+            for pattern in price_patterns:
+                for match in re.finditer(pattern, section, re.IGNORECASE):
+                    if not self._is_metric_context(section, match.start()):
+                        try:
+                            return float(match.group(1))
+                        except (TypeError, ValueError):
+                            continue
+
+        return None
+
+    def _candidate_sections(self, text: str) -> list[str]:
+        """将最终结论附近的片段放在前面，降低正文噪音影响。"""
+        sections = []
+        anchor_positions = []
+        for marker in [
+            '最终交易决策',
+            '最终裁决',
+            '最终可操作方案',
+            '明确建议',
+            '最终交易建议',
+            '\n### 结论',
+            '\n## 结论',
+        ]:
+            idx = text.rfind(marker)
+            if idx != -1:
+                anchor_positions.append(idx)
+
+        if anchor_positions:
+            sections.append(text[max(anchor_positions):])
+
+        tail = text[-1500:] if len(text) > 1500 else text
+        if tail not in sections:
+            sections.append(tail)
+        if text not in sections:
+            sections.append(text)
+        return sections
+
+    def _is_metric_context(self, text: str, match_start: int) -> bool:
+        window_start = max(0, match_start - 24)
+        window = text[window_start:match_start].lower()
+        if match_start > 0 and text[match_start - 1] == '-':
+            return True
+
+        metric_keywords = [
+            'eps',
+            'roe',
+            'roa',
+            'pb',
+            'pe',
+            'ps',
+            'ttm',
+            '净利率',
+            '现金流',
+            '风险评分',
+            '置信度',
+            '成交量',
+            '总市值',
+            '流通市值',
+            '负债率',
+            '流动比率',
+            '速动比率',
+            '现金比率',
+            '换手率',
+            'macd',
+            'rsi',
+            'ma5',
+            'ma10',
+            'ma20',
+            'ma60',
+        ]
+        return any(keyword in window for keyword in metric_keywords)

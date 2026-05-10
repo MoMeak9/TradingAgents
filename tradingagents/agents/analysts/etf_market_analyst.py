@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta
 
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-
 from tradingagents.agents.utils.etf_data_tools import (
     get_etf_indicators,
     get_etf_price_data,
@@ -68,28 +66,64 @@ def _build_etf_market_tool_calls(
     return planned_calls
 
 
+def _truncate_csv_block(text: str, max_rows: int = 40) -> str:
+    lines = text.splitlines()
+    if len(lines) <= max_rows + 3:
+        return text
+
+    header = [line for line in lines[:3]]
+    body = lines[3:]
+    return "\n".join(header + body[-max_rows:])
+
+
+def _truncate_indicator_block(text: str, max_lines: int = 25) -> str:
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    return "\n".join(lines[:2] + lines[-(max_lines - 2):])
+
+
 def create_etf_market_analyst(llm, toolkit=None):
     def etf_market_analyst_node(state):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
-        tools = [get_etf_price_data, get_etf_indicators]
+        history_start = _history_start_date(current_date)
 
-        system_message = (
-            f"{build_etf_report_header('ETF 市场分析', ticker)}\n"
-            "你是 ETF 行情与技术分析师。必须先获取 ETF 历史行情和关键技术指标，"
-            "再输出交易视角与配置视角的分析结论。"
+        price_data = get_etf_price_data.invoke(
+            {
+                "symbol": ticker,
+                "start_date": history_start,
+                "end_date": current_date,
+            }
         )
-        prompt = ChatPromptTemplate.from_messages(
-            [("system", "{system_message} 当前日期：{current_date}。"), MessagesPlaceholder(variable_name="messages")]
-        ).partial(system_message=system_message, current_date=current_date)
+        indicator_results = []
+        core_indicators = ["close_20_sma", "close_60_sma", "macd", "rsi", "boll"]
+        for indicator in core_indicators:
+            indicator_results.append(
+                _truncate_indicator_block(get_etf_indicators.invoke(
+                    {
+                        "symbol": ticker,
+                        "indicator": indicator,
+                        "curr_date": current_date,
+                        "look_back_days": 60,
+                    }
+                ))
+            )
 
-        chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke({"messages": state["messages"]})
-        report = result.content if not getattr(result, "tool_calls", None) else ""
+        report_prompt = (
+            f"{build_etf_report_header('ETF 市场分析', ticker)}\n"
+            "你是 ETF 行情与技术分析师。下面已提供 ETF 历史行情与关键技术指标，请基于真实数据输出正式分析报告。\n"
+            "输出必须同时包含：交易视角、配置视角、关键价格区间、主要风险提示。\n\n"
+            f"## 历史行情\n{_truncate_csv_block(price_data)}\n\n"
+            f"## 技术指标\n{chr(10).join(indicator_results)}"
+        )
+
+        result = llm.invoke(report_prompt)
+        report = result.content
         update = {
             "messages": [result],
             "etf_market_report": report,
-            "market_tool_call_count": state.get("market_tool_call_count", 0) + 1,
+            "market_tool_call_count": len(core_indicators) + 1,
         }
         return apply_asset_report_mapping(update, "etf")
 

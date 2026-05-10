@@ -101,6 +101,36 @@ from .market_utils import (
 # Configuration and routing logic
 from .config import get_config, get_market_context, get_asset_context
 
+# A-share ETF vendor imports (akshare-based, always available)
+from .akshare_etf import (
+    get_etf_price_data as get_akshare_etf_price_data,
+    get_etf_indicators as get_akshare_etf_indicators,
+    get_etf_profile as get_akshare_etf_profile,
+    get_etf_holdings as get_akshare_etf_holdings,
+    get_etf_fund_flow as get_akshare_etf_fund_flow,
+    get_etf_discount_premium as get_akshare_etf_discount_premium,
+    get_etf_tracking_info as get_akshare_etf_tracking_info,
+    get_etf_news as get_akshare_etf_news,
+)
+
+# Tushare ETF vendor imports (optional, requires tushare package + token)
+_TUSHARE_ETF_AVAILABLE = False
+if _TUSHARE_AVAILABLE:
+    try:
+        from .tushare_etf import (
+            get_etf_price_data as get_tushare_etf_price_data,
+            get_etf_indicators as get_tushare_etf_indicators,
+            get_etf_profile as get_tushare_etf_profile,
+            get_etf_holdings as get_tushare_etf_holdings,
+            get_etf_fund_flow as get_tushare_etf_fund_flow,
+            get_etf_discount_premium as get_tushare_etf_discount_premium,
+            get_etf_tracking_info as get_tushare_etf_tracking_info,
+            get_etf_news as get_tushare_etf_news,
+        )
+        _TUSHARE_ETF_AVAILABLE = True
+    except ImportError:
+        pass
+
 # BaoStock vendor imports (optional, requires baostock package)
 try:
     import baostock as _baostock_check  # verify the package is actually installed
@@ -411,9 +441,11 @@ def _detect_market_for_route(method: str, args, kwargs) -> str:
 
     return detect_market(str(symbol))
 
-
 def _route_etf_vendor(method: str, *args, **kwargs):
     """Route ETF method calls to ETF-specific vendor implementations."""
+    kwargs = dict(kwargs)
+    kwargs.pop("asset_type", None)
+
     if method not in ETF_VENDOR_METHODS:
         return f"Error: ETF method '{method}' not supported."
 

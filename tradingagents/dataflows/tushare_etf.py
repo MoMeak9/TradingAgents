@@ -5,8 +5,16 @@ from typing import Annotated
 
 import pandas as pd
 
+from .market_utils import get_exchange, normalize_symbol
 from .stockstats_utils import _clean_dataframe
-from .tushare_stock import TushareError, _get_tushare_api, _to_ts_code
+from .tushare_stock import TushareError, _get_tushare_api
+
+
+def _to_etf_ts_code(symbol: str) -> str:
+    """Convert A-share ETF code to the correct tushare ts_code format."""
+    normalized = normalize_symbol(symbol, "cn")
+    exchange = get_exchange(normalized)
+    return f"{normalized}.{exchange}"
 
 
 def get_etf_price_data(
@@ -16,7 +24,7 @@ def get_etf_price_data(
 ) -> str:
     try:
         pro = _get_tushare_api()
-        ts_code = _to_ts_code(symbol)
+        ts_code = _to_etf_ts_code(symbol)
         df = pro.fund_daily(
             ts_code=ts_code,
             start_date=start_date.replace("-", ""),
@@ -89,7 +97,7 @@ def get_etf_profile(
 ) -> str:
     try:
         pro = _get_tushare_api()
-        ts_code = _to_ts_code(ticker)
+        ts_code = _to_etf_ts_code(ticker)
         parts = []
 
         basic = pro.fund_basic(ts_code=ts_code)
@@ -126,7 +134,7 @@ def get_etf_holdings(
 ) -> str:
     try:
         pro = _get_tushare_api()
-        ts_code = _to_ts_code(ticker)
+        ts_code = _to_etf_ts_code(ticker)
         df = pro.fund_portfolio(ts_code=ts_code)
         if df is None or df.empty:
             return f"# ETF Holdings for {ticker}\n\n未获取到 ETF 持仓数据。"
@@ -143,7 +151,7 @@ def get_etf_fund_flow(
 ) -> str:
     try:
         pro = _get_tushare_api()
-        ts_code = _to_ts_code(ticker)
+        ts_code = _to_etf_ts_code(ticker)
         ref_date = (curr_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
         df = pro.fund_share(
             ts_code=ts_code,

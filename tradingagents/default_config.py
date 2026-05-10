@@ -15,6 +15,9 @@ DEFAULT_CONFIG = {
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
+    "custom_streaming": False,
+    "custom_timeout": 180,
+    "custom_max_retries": 4,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
@@ -37,12 +40,9 @@ DEFAULT_CONFIG = {
     },
     # ETF data vendor configuration
     "etf_data_vendors": {
-        "price_data": "tushare,akshare",
-        "technical_indicators": "tushare,akshare",
-        "product_data": "tushare,akshare",
-        "holdings_data": "tushare,akshare",
-        "flow_data": "tushare,akshare",
-        "news_data": "akshare",
+        "etf_price_data": "tushare,akshare",
+        "etf_product_data": "tushare,akshare",
+        "etf_news_data": "akshare",
     },
     "etf_tool_vendors": {
         # Example: "get_etf_profile": "tushare",

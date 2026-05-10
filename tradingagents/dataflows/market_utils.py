@@ -76,9 +76,23 @@ def normalize_symbol(symbol: str, market: str) -> str:
 
 
 def is_etf(symbol: str) -> bool:
-    """Detect whether a CN symbol matches common A-share ETF code prefixes."""
+    """
+    Detect whether an A-share symbol is an ETF.
+
+    A-share ETF code prefixes:
+      - Shanghai: 51xxxx, 52xxxx, 56xxxx, 58xxxx
+      - Shenzhen: 15xxxx, 16xxxx
+
+    Args:
+        symbol: Raw or normalized 6-digit A-share code.
+
+    Returns: True if the symbol matches known ETF prefixes.
+    """
     normalized = normalize_symbol(symbol, "cn")
-    return len(normalized) == 6 and normalized.isdigit() and normalized.startswith(ETF_CODE_PREFIXES)
+    if not normalized or len(normalized) != 6:
+        return False
+    prefix2 = normalized[:2]
+    return prefix2 in ("51", "52", "56", "58", "15", "16")
 
 
 def is_supported_cn_etf(symbol: str) -> bool:
@@ -144,6 +158,7 @@ def get_market_info(symbol: str) -> dict:
     if market == "cn":
         normalized = normalize_symbol(symbol, "cn")
         exchange = get_exchange(normalized)
+        etf = is_etf(normalized)
         return {
             "market": "cn",
             "exchange": exchange,

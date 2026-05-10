@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+from tradingagents.agents.utils.agent_utils import truncate_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,12 @@ def create_risk_manager(llm, memory):
         fundamentals_report = state["fundamentals_report"]
         sentiment_report = state["sentiment_report"]
         trader_plan = state["investment_plan"]
+
+        market_research_report = truncate_for_prompt(market_research_report)
+        sentiment_report = truncate_for_prompt(sentiment_report)
+        news_report = truncate_for_prompt(news_report)
+        fundamentals_report = truncate_for_prompt(fundamentals_report)
+        trader_plan = truncate_for_prompt(trader_plan, max_chars=2200)
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
 

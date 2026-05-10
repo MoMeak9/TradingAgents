@@ -35,4 +35,14 @@ def create_msg_delete():
     return delete_messages
 
 
+def truncate_for_prompt(text: str, max_chars: int = 1800) -> str:
+    """Keep downstream prompts bounded without removing the entire signal."""
+    if not text:
+        return ""
+    text = str(text)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[内容已截断以控制提示词长度]"
+
+
         
