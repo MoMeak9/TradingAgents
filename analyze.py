@@ -580,25 +580,25 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--provider",
         type=str,
-        default=os.getenv("LLM_PROVIDER", "custom"),
-        help="LLM 提供商（默认: custom）",
+        default=os.getenv("LLM_PROVIDER", "deepseek"),
+        help="LLM 提供商（默认: deepseek）",
     )
     parser.add_argument(
         "--deep-model",
         type=str,
-        default=os.getenv("DEEP_LLM_MODEL", os.getenv("CUSTOM_LLM_MODEL", "gpt-5.4")),
+        default=os.getenv("DEEP_LLM_MODEL", os.getenv("CUSTOM_LLM_MODEL", "deepseek-v4-flash")),
         help="深度思考模型名",
     )
     parser.add_argument(
         "--quick-model",
         type=str,
-        default=os.getenv("QUICK_LLM_MODEL", os.getenv("CUSTOM_LLM_MODEL", "gpt-5.4")),
+        default=os.getenv("QUICK_LLM_MODEL", os.getenv("CUSTOM_LLM_MODEL", "deepseek-v4-flash")),
         help="快速思考模型名",
     )
     parser.add_argument(
         "--backend-url",
         type=str,
-        default=os.getenv("CUSTOM_LLM_API_URL", ""),
+        default=os.getenv("CUSTOM_LLM_API_URL", "https://api.deepseek.com"),
         help="LLM API 地址",
     )
     parser.add_argument(

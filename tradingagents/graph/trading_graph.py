@@ -176,10 +176,25 @@ class TradingAgentsGraph:
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
 
+        elif provider == "deepseek":
+            # DeepSeek V4 models default to thinking mode which requires
+            # reasoning_content to be passed back in multi-turn conversations.
+            # LangChain doesn't handle this properly, so disable thinking by default.
+            if not self.config.get("deepseek_thinking"):
+                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+
         elif provider == "custom":
-            # Enable streaming to keep connection alive through proxy gateways
-            # and avoid 504 timeouts on long-context requests.
-            kwargs["streaming"] = True
+            # Some custom OpenAI-compatible gateways are less stable with
+            # chunked streaming on long responses. Keep it configurable and
+            # default to non-streaming for reliability.
+            if self.config.get("custom_streaming"):
+                kwargs["streaming"] = True
+            timeout = self.config.get("custom_timeout")
+            if timeout:
+                kwargs["timeout"] = timeout
+            max_retries = self.config.get("custom_max_retries")
+            if max_retries is not None:
+                kwargs["max_retries"] = max_retries
 
         return kwargs
 

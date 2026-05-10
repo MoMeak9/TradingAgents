@@ -164,7 +164,7 @@ def create_news_analyst(llm, toolkit=None):
 
                 # Use get_news tool directly
                 pre_fetched_news = get_news.invoke({
-                    "query": ticker,
+                    "ticker": ticker,
                     "start_date": current_date,
                     "end_date": current_date
                 })
